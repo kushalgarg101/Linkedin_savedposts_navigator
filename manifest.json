@@ -5,6 +5,7 @@
   "description": "Search and filter LinkedIn saved posts from an in-page sidebar.",
   "permissions": ["storage", "tabs"],
   "host_permissions": [
+    "https://www.linkedin.com/my-items/saved-posts",
     "https://www.linkedin.com/my-items/saved-posts/*",
     "https://www.linkedin.com/my-items/saved-posts/"
   ],
@@ -14,7 +15,11 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.linkedin.com/my-items/saved-posts/*", "https://www.linkedin.com/my-items/saved-posts/"],
+      "matches": [
+        "https://www.linkedin.com/my-items/saved-posts",
+        "https://www.linkedin.com/my-items/saved-posts/*",
+        "https://www.linkedin.com/my-items/saved-posts/"
+      ],
       "js": ["src/content/linkedin-saved.js"],
       "css": ["src/sidebar/sidebar.css"],
       "run_at": "document_idle"
