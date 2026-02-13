@@ -14,6 +14,7 @@ const sample = {
 
 test("postMatches matches query text and author", () => {
   assert.equal(postMatches(sample, "performance", {}), true);
+  assert.equal(postMatches(sample, "React checklist", {}), true);
   assert.equal(postMatches(sample, "alice", {}), true);
   assert.equal(postMatches(sample, "golang", {}), false);
 });
@@ -28,6 +29,12 @@ test("postMatches applies month/day/type filters", () => {
   };
   assert.equal(postMatches(sample, "", filters), true);
   assert.equal(postMatches(sample, "", { ...filters, months: [8] }), false);
+});
+
+test("postMatches supports partial author filter values", () => {
+  assert.equal(postMatches(sample, "", { authors: ["Alice"] }), true);
+  assert.equal(postMatches(sample, "", { authors: ["Doe"] }), true);
+  assert.equal(postMatches(sample, "", { authors: ["Bob"] }), false);
 });
 
 test("postMatches treats dateTo as inclusive end-of-day", () => {

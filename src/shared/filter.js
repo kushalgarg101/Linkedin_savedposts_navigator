@@ -7,12 +7,24 @@ function parseIso(value) {
 
 function includesText(post, queryText) {
   if (!queryText) return true;
-  const q = queryText.toLowerCase();
-  return (
-    String(post.contentText || "").toLowerCase().includes(q) ||
-    String(post.authorName || "").toLowerCase().includes(q) ||
-    String(post.postUrl || "").toLowerCase().includes(q)
-  );
+  const tokens = String(queryText)
+    .toLowerCase()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  if (tokens.length === 0) return true;
+
+  const haystack = [
+    String(post.contentText || ""),
+    String(post.authorName || ""),
+    String(post.postUrl || ""),
+    String(post.dateLabel || ""),
+    String(post.contentType || ""),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return tokens.every((token) => haystack.includes(token));
 }
 
 function inDateRange(post, dateFrom, dateTo) {
@@ -48,12 +60,18 @@ function inDayOfWeek(post, days) {
 
 function inAuthors(post, authors) {
   if (!Array.isArray(authors) || authors.length === 0) return true;
-  return authors.some((author) => String(post.authorName || "").toLowerCase() === String(author || "").toLowerCase());
+  const candidate = String(post.authorName || "").toLowerCase();
+  return authors.some((author) => {
+    const filterValue = String(author || "").toLowerCase().trim();
+    if (!filterValue) return true;
+    return candidate.includes(filterValue) || filterValue.includes(candidate);
+  });
 }
 
 function inTypes(post, contentTypes) {
   if (!Array.isArray(contentTypes) || contentTypes.length === 0) return true;
-  return contentTypes.includes(post.contentType || "unknown");
+  const currentType = String(post.contentType || "unknown").toLowerCase();
+  return contentTypes.some((type) => String(type || "").toLowerCase() === currentType);
 }
 
 export function postMatches(post, queryText = "", filters = {}) {
