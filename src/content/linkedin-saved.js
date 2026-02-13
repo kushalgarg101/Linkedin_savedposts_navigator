@@ -38,6 +38,9 @@ const TEXT_SELECTORS = [
   ".update-components-text",
   ".feed-shared-update-v2__description",
   ".entity-result__summary",
+  ".feed-shared-update-v2__commentary",
+  ".break-words",
+  "[data-test-id*='main-feed-activity-card']",
   "span[dir='ltr']",
 ];
 
@@ -152,7 +155,53 @@ function deriveAuthorFromContent(contentText) {
 
 function stripProfileHeaderNoise(contentText) {
   const text = normalizeWhitespace(contentText || "");
-  return text.replace(/^.{2,80}?\s*View\s+.+?\s+profile\s*/i, "").trim();
+  const cleaned = text
+    .replace(/^.{2,80}?\s*View\s+.+?\s+profile\s*/i, "")
+    .replace(/\bLike\b|\bComment\b|\bRepost\b|\bSend\b|\bShare\b/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned || text;
+}
+
+function extractPostLinkText(card) {
+  const postLink = card.querySelector("a[href*='/feed/update/'], a[href*='/posts/']");
+  if (!postLink) return "";
+  const bits = [
+    postLink.textContent || "",
+    postLink.getAttribute("aria-label") || "",
+    postLink.getAttribute("title") || "",
+  ]
+    .map((x) => normalizeWhitespace(x))
+    .filter(Boolean);
+  return bits.join(" ");
+}
+
+function extractBestContentText(card) {
+  const candidates = [];
+  for (const selector of TEXT_SELECTORS) {
+    const node = card.querySelector(selector);
+    if (!node) continue;
+    const text = normalizeWhitespace(node.textContent || "");
+    if (text) candidates.push(text);
+  }
+
+  const postLinkText = extractPostLinkText(card);
+  if (postLinkText) candidates.push(postLinkText);
+
+  const cardText = normalizeWhitespace(card.textContent || "");
+  if (cardText) candidates.push(cardText);
+
+  const cleaned = candidates
+    .map((text) => stripProfileHeaderNoise(text))
+    .map((text) => normalizeWhitespace(text))
+    .filter(Boolean)
+    .filter((text) => text.length >= 8);
+
+  if (cleaned.length === 0) {
+    return "";
+  }
+  cleaned.sort((a, b) => b.length - a.length);
+  return cleaned[0];
 }
 
 function textFromSelectors(root, selectors) {
@@ -264,7 +313,7 @@ function extractVisibleBatch(seenIds) {
     const postUrl = canonicalizePostUrl(linkFromSelectors(card, LINK_SELECTORS));
     const authorName = textFromSelectors(card, AUTHOR_SELECTORS);
     const dateLabel = textFromSelectors(card, DATE_SELECTORS);
-    const rawText = textFromSelectors(card, TEXT_SELECTORS) || card.textContent || "";
+    const rawText = extractBestContentText(card);
     const derivedAuthor = deriveAuthorFromContent(rawText);
     const contentText = stripProfileHeaderNoise(rawText);
     if (!postUrl) {
