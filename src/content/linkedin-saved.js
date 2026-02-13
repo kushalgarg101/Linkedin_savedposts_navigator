@@ -275,6 +275,7 @@ async function sendMessage(type, payload = {}) {
   } catch (error) {
     if (isRuntimeInvalidationError(error)) {
       handleRuntimeInvalidation(error);
+      throw new Error("Extension context invalidated. Refresh page.");
     }
     logError(`sendMessage ${type}`, error);
     throw error;
@@ -710,57 +711,69 @@ async function pollSyncStatus() {
   }
 }
 
-createSidebar();
-pollSyncStatus();
+function registerMessageListener() {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (!message || typeof message !== "object") {
+      sendResponse({ ok: false, error: "Invalid message payload" });
+      return false;
+    }
+    if (!message.type) {
+      sendResponse({ ok: false, error: "Missing message type" });
+      return false;
+    }
+    if (message.type === MESSAGE_TYPES.SYNC_START) {
+      window.__LSN_SYNC_ENGINE__
+        .start({ reset: Boolean(message.payload?.reset) })
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) => {
+          logError("SYNC_START handler", error);
+          sendResponse({ ok: false, error: String(error?.message || error) });
+        });
+      return true;
+    }
+    if (message.type === MESSAGE_TYPES.SYNC_PAUSE) {
+      window.__LSN_SYNC_ENGINE__
+        .pause()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) => {
+          logError("SYNC_PAUSE handler", error);
+          sendResponse({ ok: false, error: String(error?.message || error) });
+        });
+      return true;
+    }
+    if (message.type === MESSAGE_TYPES.SYNC_RESUME) {
+      window.__LSN_SYNC_ENGINE__
+        .resume()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) => {
+          logError("SYNC_RESUME handler", error);
+          sendResponse({ ok: false, error: String(error?.message || error) });
+        });
+      return true;
+    }
 
-window.addEventListener("error", (event) => {
-  logError("window error", event?.error || event?.message || "unknown error");
-});
-
-window.addEventListener("unhandledrejection", (event) => {
-  logError("unhandled rejection", event?.reason || "unknown rejection");
-});
-
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (!message || typeof message !== "object") {
-    sendResponse({ ok: false, error: "Invalid message payload" });
+    sendResponse({ ok: false, error: `Unsupported content-script message type: ${String(message.type)}` });
     return false;
-  }
-  if (!message.type) {
-    sendResponse({ ok: false, error: "Missing message type" });
+  });
+}
+
+function bootstrapOnce() {
+  if (window.__LSN_BOOTSTRAPPED__) {
     return;
   }
-  if (message.type === MESSAGE_TYPES.SYNC_START) {
-    window.__LSN_SYNC_ENGINE__
-      .start({ reset: Boolean(message.payload?.reset) })
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) => {
-        logError("SYNC_START handler", error);
-        sendResponse({ ok: false, error: String(error?.message || error) });
-      });
-    return true;
-  }
-  if (message.type === MESSAGE_TYPES.SYNC_PAUSE) {
-    window.__LSN_SYNC_ENGINE__
-      .pause()
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) => {
-        logError("SYNC_PAUSE handler", error);
-        sendResponse({ ok: false, error: String(error?.message || error) });
-      });
-    return true;
-  }
-  if (message.type === MESSAGE_TYPES.SYNC_RESUME) {
-    window.__LSN_SYNC_ENGINE__
-      .resume()
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) => {
-        logError("SYNC_RESUME handler", error);
-        sendResponse({ ok: false, error: String(error?.message || error) });
-      });
-    return true;
-  }
+  window.__LSN_BOOTSTRAPPED__ = true;
+  createSidebar();
+  pollSyncStatus();
 
-  sendResponse({ ok: false, error: `Unsupported content-script message type: ${String(message.type)}` });
-  return false;
-});
+  window.addEventListener("error", (event) => {
+    logError("window error", event?.error || event?.message || "unknown error");
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    logError("unhandled rejection", event?.reason || "unknown rejection");
+  });
+
+  registerMessageListener();
+}
+
+bootstrapOnce();
