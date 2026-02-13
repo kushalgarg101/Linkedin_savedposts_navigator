@@ -152,6 +152,34 @@
   padding-top: 10px;
 }
 
+.lsn-pagination {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.lsn-pagination button {
+  border: 1px solid #cfd8e3;
+  background: #f7f9fb;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.lsn-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#lsn-page-label {
+  font-size: 11px;
+  color: #5b6570;
+  white-space: nowrap;
+}
+
 .lsn-results-meta {
   margin: 0 0 8px;
   font-size: 12px;

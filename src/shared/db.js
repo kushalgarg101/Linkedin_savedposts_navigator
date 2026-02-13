@@ -1,4 +1,4 @@
-import { postMatches, sortRecentFirst } from "./filter.js";
+import { postMatches } from "./filter.js";
 
 const DB_NAME = "linkedin_saved_navigator";
 const DB_VERSION = 1;
@@ -7,6 +7,9 @@ const STORES = Object.freeze({
   POSTS: "saved_posts",
   SYNC: "sync_state",
 });
+
+const MAX_PAGE_SIZE = 200;
+const MAX_ALL_MATCHES_PAGE_SIZE = 500;
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -106,25 +109,103 @@ export async function searchPosts({
   pageSize = 30,
 } = {}) {
   const db = await getDb();
-  const tx = db.transaction(STORES.POSTS, "readonly");
-  const store = tx.objectStore(STORES.POSTS);
-  const all = await requestToPromise(store.getAll());
-
-  const filtered = all
-    .filter((post) => postMatches(post, queryText, filters))
-    .sort(sortRecentFirst);
-
   const normalizedPageSize = Number(pageSize);
   const returnAll = !Number.isFinite(normalizedPageSize) || normalizedPageSize <= 0;
-  const safePageSize = returnAll ? filtered.length || 1 : Math.min(500, Math.max(1, Math.floor(normalizedPageSize)));
+  const safePageSize = returnAll
+    ? MAX_ALL_MATCHES_PAGE_SIZE
+    : Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(normalizedPageSize)));
   const safePage = Math.max(1, Math.floor(Number(page) || 1));
-  const start = returnAll ? 0 : (safePage - 1) * safePageSize;
-  const end = returnAll ? filtered.length : start + safePageSize;
+  const startOffset = (safePage - 1) * safePageSize;
+  const endOffsetExclusive = startOffset + safePageSize;
+
+  const tx = db.transaction(STORES.POSTS, "readonly");
+  const store = tx.objectStore(STORES.POSTS);
+  const cursorConfig = buildCursorConfig(store, filters);
+  const direction = "prev";
+
+  const results = [];
+  let matchedCount = 0;
+  let scannedCount = 0;
+
+  await iterateCursor(cursorConfig.source, cursorConfig.keyRange, direction, (post) => {
+    scannedCount += 1;
+    if (!postMatches(post, queryText, filters)) {
+      return;
+    }
+    matchedCount += 1;
+    if (matchedCount > startOffset && matchedCount <= endOffsetExclusive) {
+      results.push(post);
+    }
+  });
 
   return {
-    total: filtered.length,
+    total: matchedCount,
     page: safePage,
-    pageSize: returnAll ? filtered.length : safePageSize,
-    results: filtered.slice(start, end),
+    pageSize: safePageSize,
+    returnAll,
+    scannedCount,
+    hasMore: matchedCount > safePage * safePageSize,
+    results,
   };
+}
+
+function normalizeIsoDateOnly(value) {
+  if (!value) return "";
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return "";
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
+function buildDateCursorRange(filters) {
+  const fromDateOnly = normalizeIsoDateOnly(filters?.dateFrom);
+  const toDateOnly = normalizeIsoDateOnly(filters?.dateTo);
+
+  if (!fromDateOnly && !toDateOnly) {
+    return null;
+  }
+
+  const lowerBound = fromDateOnly ? `${fromDateOnly}T00:00:00.000Z` : undefined;
+  const upperBound = toDateOnly ? `${toDateOnly}T23:59:59.999Z` : undefined;
+
+  if (lowerBound && upperBound) {
+    return IDBKeyRange.bound(lowerBound, upperBound);
+  }
+  if (lowerBound) {
+    return IDBKeyRange.lowerBound(lowerBound);
+  }
+  return IDBKeyRange.upperBound(upperBound);
+}
+
+function buildCursorConfig(store, filters) {
+  const hasDateFilter = Boolean(filters?.dateFrom) || Boolean(filters?.dateTo);
+  if (hasDateFilter) {
+    return {
+      source: store.index("postDate"),
+      keyRange: buildDateCursorRange(filters),
+    };
+  }
+  return {
+    source: store.index("indexedAt"),
+    keyRange: null,
+  };
+}
+
+function iterateCursor(source, keyRange, direction, onValue) {
+  return new Promise((resolve, reject) => {
+    const request = source.openCursor(keyRange, direction);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (!cursor) {
+        resolve();
+        return;
+      }
+      try {
+        onValue(cursor.value);
+        cursor.continue();
+      } catch (error) {
+        reject(error);
+      }
+    };
+  });
 }

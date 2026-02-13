@@ -46,6 +46,13 @@ const MAX_STAGNANT_CYCLES = 6;
 const MAX_TICKS = 4000;
 const LOAD_WAIT_MS = 2600;
 const POLL_MS = 1500;
+const DEFAULT_PAGE_SIZE = 50;
+const ALL_MATCHES_PAGE_SIZE = 200;
+
+const searchState = {
+  page: 1,
+  totalPages: 1,
+};
 
 function hashString(input) {
   let h = 2166136261;
@@ -445,6 +452,11 @@ function createSidebar() {
       </div>
       <div id="lsn-results-zone">
         <p class="lsn-results-meta">No results yet.</p>
+        <div class="lsn-pagination">
+          <button id="lsn-prev" disabled>Prev</button>
+          <span id="lsn-page-label">Page 1 / 1</span>
+          <button id="lsn-next" disabled>Next</button>
+        </div>
         <div id="lsn-results-list"></div>
       </div>
     </section>
@@ -465,6 +477,16 @@ function createSidebar() {
   });
   el("lsn-search")?.addEventListener("click", () => performSearch(1));
   el("lsn-clear")?.addEventListener("click", () => clearFilters());
+  el("lsn-prev")?.addEventListener("click", () => {
+    if (searchState.page > 1) {
+      performSearch(searchState.page - 1);
+    }
+  });
+  el("lsn-next")?.addEventListener("click", () => {
+    if (searchState.page < searchState.totalPages) {
+      performSearch(searchState.page + 1);
+    }
+  });
   el("lsn-q")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -518,9 +540,26 @@ function getFiltersFromUi() {
 function renderResults(payload) {
   const list = el("lsn-results-list");
   const meta = document.querySelector(".lsn-results-meta");
-  if (!list || !meta) return;
+  const prevBtn = el("lsn-prev");
+  const nextBtn = el("lsn-next");
+  const pageLabel = el("lsn-page-label");
+  if (!list || !meta || !prevBtn || !nextBtn || !pageLabel) return;
   const results = Array.isArray(payload?.results) ? payload.results : [];
-  meta.textContent = `Found ${payload?.total || 0} posts`;
+  const total = Number(payload?.total || 0);
+  const page = Math.max(1, Number(payload?.page || 1));
+  const pageSize = Math.max(1, Number(payload?.pageSize || DEFAULT_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  searchState.page = page;
+  searchState.totalPages = totalPages;
+  prevBtn.disabled = page <= 1;
+  nextBtn.disabled = page >= totalPages;
+  pageLabel.textContent = `Page ${page} / ${totalPages}`;
+  meta.textContent = `Found ${total} posts`;
+  if (payload?.returnAll) {
+    meta.textContent += " | high-volume mode";
+  }
+
   if (results.length === 0) {
     list.innerHTML = "<p class='lsn-empty'>No matches.</p>";
     return;
@@ -566,7 +605,7 @@ async function performSearch(page = 1) {
       queryText,
       filters,
       page,
-      pageSize: allMatches ? 0 : 50,
+      pageSize: allMatches ? ALL_MATCHES_PAGE_SIZE : DEFAULT_PAGE_SIZE,
     });
     if (response?.ok) {
       renderResults(response.data);
