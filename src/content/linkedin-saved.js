@@ -126,6 +126,8 @@ function canonicalizePostUrl(url) {
     if (parsed.protocol !== "https:") return "";
     if (parsed.hostname !== "www.linkedin.com" && parsed.hostname !== "linkedin.com") return "";
     if (!parsed.pathname.includes("/feed/update/") && !parsed.pathname.includes("/posts/")) return "";
+    parsed.search = "";
+    parsed.hash = "";
     return parsed.toString();
   } catch {
     return "";

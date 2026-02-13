@@ -9,6 +9,7 @@ import {
 import { loadSyncState, saveSyncState, upsertPosts, searchPosts, getPostById } from "../shared/db.js";
 
 let syncState = createDefaultSyncState();
+const ALLOWED_SENDER_PREFIX = "https://www.linkedin.com/my-items/saved-posts/";
 
 function isAllowedPostUrl(url) {
   try {
@@ -19,6 +20,11 @@ function isAllowedPostUrl(url) {
   } catch {
     return false;
   }
+}
+
+function isAllowedSender(sender) {
+  const senderUrl = String(sender?.url || "");
+  return senderUrl.startsWith(ALLOWED_SENDER_PREFIX);
 }
 
 async function hydrateSyncState() {
@@ -165,6 +171,10 @@ chrome.runtime.onStartup.addListener(() => {
 hydrateSyncState();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!isAllowedSender(_sender)) {
+    sendResponse(err("Sender not allowed"));
+    return false;
+  }
   handleMessage(message)
     .then(sendResponse)
     .catch((e) => {
