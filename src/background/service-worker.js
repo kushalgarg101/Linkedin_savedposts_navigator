@@ -6,7 +6,7 @@ import {
   ok,
   err,
 } from "../shared/messages.js";
-import { loadSyncState, saveSyncState, upsertPosts, searchPosts, getPostById, getHealthStats } from "../shared/db.js";
+import { loadSyncState, saveSyncState, upsertPosts, searchPosts, getPostById, getHealthStats, clearPosts } from "../shared/db.js";
 
 let syncState = createDefaultSyncState();
 const ALLOWED_SENDER_RE = /^https:\/\/www\.linkedin\.com\/my-items\/saved-posts(?:\/|\?|#|$)/i;
@@ -55,6 +55,9 @@ function newSessionId() {
 
 async function handleSyncStart(payload) {
   const resetCounter = Boolean(payload?.reset);
+  if (resetCounter) {
+    await clearPosts();
+  }
   const next = {
     status: SYNC_STATUSES.RUNNING,
     sessionId: newSessionId(),
@@ -65,6 +68,7 @@ async function handleSyncStart(payload) {
   if (resetCounter) {
     next.itemsIndexed = 0;
     next.batchesSeen = 0;
+    next.lastCheckpoint = null;
   }
   return ok(await setState(next));
 }

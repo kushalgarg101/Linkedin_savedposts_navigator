@@ -484,7 +484,7 @@ function createSidebar() {
       </header>
       <p id="lsn-runtime-notice" style="display:none;"></p>
       <div class="lsn-controls">
-        <button id="lsn-start">Start Sync</button>
+        <button id="lsn-start">Start Sync (Reset)</button>
         <button id="lsn-pause">Pause</button>
         <button id="lsn-resume">Resume</button>
       </div>

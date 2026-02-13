@@ -90,6 +90,18 @@ export async function upsertPosts(items) {
   return { total, batchSize: items.length };
 }
 
+export async function clearPosts() {
+  const db = await getDb();
+  const tx = db.transaction(STORES.POSTS, "readwrite");
+  const store = tx.objectStore(STORES.POSTS);
+  store.clear();
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
 export async function countPosts() {
   const db = await getDb();
   const store = getStore(db, STORES.POSTS);
