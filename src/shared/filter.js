@@ -61,10 +61,11 @@ function inDayOfWeek(post, days) {
 function inAuthors(post, authors) {
   if (!Array.isArray(authors) || authors.length === 0) return true;
   const candidate = String(post.authorName || "").toLowerCase();
+  if (!candidate.trim()) return false;
   return authors.some((author) => {
     const filterValue = String(author || "").toLowerCase().trim();
-    if (!filterValue) return true;
-    return candidate.includes(filterValue) || filterValue.includes(candidate);
+    if (!filterValue) return false;
+    return candidate.includes(filterValue);
   });
 }
 

@@ -37,6 +37,11 @@ test("postMatches supports partial author filter values", () => {
   assert.equal(postMatches(sample, "", { authors: ["Bob"] }), false);
 });
 
+test("postMatches does not match empty author records when author filter is set", () => {
+  const noAuthor = { ...sample, authorName: "" };
+  assert.equal(postMatches(noAuthor, "", { authors: ["Alice"] }), false);
+});
+
 test("postMatches treats dateTo as inclusive end-of-day", () => {
   const timed = { ...sample, postDate: "2025-09-08T18:30:00.000Z" };
   assert.equal(postMatches(timed, "", { dateTo: "2025-09-08" }), true);
