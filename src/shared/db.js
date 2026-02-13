@@ -114,12 +114,17 @@ export async function searchPosts({
     .filter((post) => postMatches(post, queryText, filters))
     .sort(sortRecentFirst);
 
-  const start = Math.max(0, (page - 1) * pageSize);
-  const end = start + pageSize;
+  const normalizedPageSize = Number(pageSize);
+  const returnAll = !Number.isFinite(normalizedPageSize) || normalizedPageSize <= 0;
+  const safePageSize = returnAll ? filtered.length || 1 : Math.min(500, Math.max(1, Math.floor(normalizedPageSize)));
+  const safePage = Math.max(1, Math.floor(Number(page) || 1));
+  const start = returnAll ? 0 : (safePage - 1) * safePageSize;
+  const end = returnAll ? filtered.length : start + safePageSize;
+
   return {
     total: filtered.length,
-    page,
-    pageSize,
+    page: safePage,
+    pageSize: returnAll ? filtered.length : safePageSize,
     results: filtered.slice(start, end),
   };
 }

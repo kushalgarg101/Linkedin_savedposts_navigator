@@ -69,8 +69,11 @@ async function handleSyncResume() {
 async function handleIndexBatch(payload) {
   const items = Array.isArray(payload?.items) ? payload.items : [];
   const emptyBatch = items.length === 0;
+  const atEnd = Boolean(payload?.atEnd);
+  const stagnantCycles = Number(payload?.stagnantCycles || 0);
   const nextEmptyCycles = emptyBatch ? syncState.emptyCycles + 1 : 0;
-  const nextStatus = nextEmptyCycles >= 4 ? SYNC_STATUSES.COMPLETED : syncState.status;
+  const shouldComplete = atEnd && nextEmptyCycles >= 3 && stagnantCycles >= 3;
+  const nextStatus = shouldComplete ? SYNC_STATUSES.COMPLETED : syncState.status;
   const stats = await upsertPosts(items);
 
   return ok(
@@ -80,6 +83,8 @@ async function handleIndexBatch(payload) {
       emptyCycles: nextEmptyCycles,
       status: nextStatus,
       lastCheckpoint: payload?.checkpoint || null,
+      atEnd,
+      stagnantCycles,
     }),
   );
 }
@@ -93,7 +98,7 @@ async function handleSearchQuery(payload) {
     queryText: payload?.queryText || "",
     filters: payload?.filters || {},
     page: Number(payload?.page || 1),
-    pageSize: Number(payload?.pageSize || 30),
+    pageSize: Number(payload?.pageSize ?? 30),
   });
   return ok(result);
 }

@@ -41,9 +41,11 @@ const TEXT_SELECTORS = [
   "span[dir='ltr']",
 ];
 
-const TICK_MS = 1250;
-const MAX_EMPTY_CYCLES = 4;
-const MAX_TICKS = 1500;
+const TICK_MS = 1100;
+const MAX_EMPTY_CYCLES = 8;
+const MAX_STAGNANT_CYCLES = 6;
+const MAX_TICKS = 4000;
+const LOAD_WAIT_MS = 2600;
 const POLL_MS = 1500;
 
 function hashString(input) {
@@ -128,6 +130,58 @@ function queryCards() {
   return [];
 }
 
+function getScrollContainer() {
+  const candidates = [
+    ".scaffold-finite-scroll",
+    ".scaffold-finite-scroll__content",
+    ".scaffold-layout__main",
+    "main",
+  ];
+
+  for (const selector of candidates) {
+    const node = document.querySelector(selector);
+    if (node && node.scrollHeight > node.clientHeight + 100) {
+      return node;
+    }
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+function getScrollMetrics(container) {
+  const scrollTop = Number(container.scrollTop || window.scrollY || 0);
+  const clientHeight = Number(container.clientHeight || window.innerHeight || 0);
+  const scrollHeight = Number(container.scrollHeight || document.body.scrollHeight || 0);
+  return { scrollTop, clientHeight, scrollHeight };
+}
+
+function isNearBottom(container) {
+  const { scrollTop, clientHeight, scrollHeight } = getScrollMetrics(container);
+  return scrollTop + clientHeight >= scrollHeight - Math.max(160, Math.floor(clientHeight * 0.15));
+}
+
+function observeDomGrowth(timeoutMs = LOAD_WAIT_MS) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        observer.disconnect();
+        resolve(false);
+      }
+    }, timeoutMs);
+
+    const observer = new MutationObserver((mutations) => {
+      const grew = mutations.some((m) => (m.addedNodes?.length || 0) > 0);
+      if (!grew || settled) return;
+      settled = true;
+      clearTimeout(timer);
+      observer.disconnect();
+      resolve(true);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
+}
+
 function extractVisibleBatch(seenIds) {
   const cards = queryCards();
   const items = [];
@@ -157,9 +211,14 @@ async function sendMessage(type, payload = {}) {
   return chrome.runtime.sendMessage({ type, payload });
 }
 
-async function tickScroll() {
-  window.scrollBy(0, Math.max(420, Math.floor(window.innerHeight * 0.82)));
-  await sleep(200);
+async function tickScroll(container) {
+  const step = Math.max(420, Math.floor(window.innerHeight * 0.82));
+  if (container === document.scrollingElement || container === document.documentElement || container === document.body) {
+    window.scrollBy(0, step);
+  } else {
+    container.scrollTop = container.scrollTop + step;
+  }
+  await sleep(180);
 }
 
 class GuidedSyncEngine {
@@ -168,7 +227,9 @@ class GuidedSyncEngine {
     this.paused = false;
     this.seenIds = new Set();
     this.emptyCycles = 0;
+    this.stagnantCycles = 0;
     this.ticks = 0;
+    this.scrollContainer = null;
   }
 
   async start({ reset = false } = {}) {
@@ -178,8 +239,10 @@ class GuidedSyncEngine {
     if (reset) {
       this.seenIds.clear();
       this.emptyCycles = 0;
+      this.stagnantCycles = 0;
       this.ticks = 0;
     }
+    this.scrollContainer = getScrollContainer();
     this.running = true;
     this.paused = false;
     await sendMessage(MESSAGE_TYPES.SYNC_START, { reset });
@@ -209,8 +272,9 @@ class GuidedSyncEngine {
 
   async loop() {
     while (this.running && !this.paused && this.ticks < MAX_TICKS) {
+      const cardCountBefore = queryCards().length;
+      const metricsBefore = getScrollMetrics(this.scrollContainer);
       const batch = extractVisibleBatch(this.seenIds);
-      const response = await sendMessage(MESSAGE_TYPES.INDEX_BATCH, { items: batch });
 
       if (batch.length === 0) {
         this.emptyCycles += 1;
@@ -218,20 +282,51 @@ class GuidedSyncEngine {
         this.emptyCycles = 0;
       }
 
+      await tickScroll(this.scrollContainer);
+      const growthSeen = await observeDomGrowth(LOAD_WAIT_MS);
+      await sleep(TICK_MS);
+
+      const cardCountAfter = queryCards().length;
+      const metricsAfter = getScrollMetrics(this.scrollContainer);
+      const progressed =
+        growthSeen ||
+        cardCountAfter > cardCountBefore ||
+        metricsAfter.scrollHeight > metricsBefore.scrollHeight + 10;
+
+      if (progressed) {
+        this.stagnantCycles = 0;
+      } else if (isNearBottom(this.scrollContainer)) {
+        this.stagnantCycles += 1;
+      }
+
+      const atEnd = isNearBottom(this.scrollContainer);
+      const response = await sendMessage(MESSAGE_TYPES.INDEX_BATCH, {
+        items: batch,
+        atEnd,
+        stagnantCycles: this.stagnantCycles,
+        checkpoint: {
+          tick: this.ticks,
+          scrollTop: metricsAfter.scrollTop,
+          scrollHeight: metricsAfter.scrollHeight,
+          cardCount: cardCountAfter,
+        },
+      });
+
       if (!response?.ok) {
         this.running = false;
         throw new Error(response?.error || "Unknown indexing error");
       }
 
-      if (this.emptyCycles >= MAX_EMPTY_CYCLES || response.data?.status === "completed") {
+      if (
+        response.data?.status === "completed" ||
+        (this.emptyCycles >= MAX_EMPTY_CYCLES && this.stagnantCycles >= MAX_STAGNANT_CYCLES && atEnd)
+      ) {
         this.running = false;
         this.paused = false;
         return;
       }
 
       this.ticks += 1;
-      await tickScroll();
-      await sleep(TICK_MS);
     }
     this.running = false;
     this.paused = false;
@@ -308,6 +403,10 @@ function createSidebar() {
           <input id="lsn-dom" type="number" min="1" max="31" placeholder="Day (1-31)" />
         </div>
         <div class="lsn-search-actions">
+          <label class="lsn-all-match-row">
+            <input id="lsn-all-matches" type="checkbox" />
+            Return all matches
+          </label>
           <button id="lsn-search">Search</button>
           <button id="lsn-clear">Clear</button>
         </div>
@@ -429,11 +528,12 @@ function renderResults(payload) {
 async function performSearch(page = 1) {
   const queryText = el("lsn-q")?.value || "";
   const filters = getFiltersFromUi();
+  const allMatches = Boolean(el("lsn-all-matches")?.checked);
   const response = await sendMessage(MESSAGE_TYPES.SEARCH_QUERY, {
     queryText,
     filters,
     page,
-    pageSize: 25,
+    pageSize: allMatches ? 0 : 50,
   });
   if (response?.ok) {
     renderResults(response.data);
@@ -451,6 +551,9 @@ function clearFilters() {
     const node = el(id);
     if (!node) continue;
     node.value = "";
+  }
+  if (el("lsn-all-matches")) {
+    el("lsn-all-matches").checked = false;
   }
   performSearch(1);
 }
