@@ -178,7 +178,7 @@ function looksLikePersonName(text) {
     return false;
   }
   const words = candidate.split(/\s+/).filter(Boolean);
-  if (words.length < 2 || words.length > 5) return false;
+  if (words.length < 1 || words.length > 6) return false;
   return words.every((word) => /^[\p{L}\p{M}][\p{L}\p{M}.'-]*$/u.test(word));
 }
 
@@ -208,12 +208,43 @@ function pickBestAuthor(candidates) {
   return bestScore >= 0 ? best : "";
 }
 
+function toTitleCaseName(text) {
+  return String(text || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function extractAuthorFromProfileSlug(href) {
+  try {
+    const parsed = new URL(href, window.location.origin);
+    const path = parsed.pathname || "";
+    const match = path.match(/\/in\/([^/?#]+)/i);
+    if (!match?.[1]) return "";
+    const slug = match[1]
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\d+\b/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    if (!slug) return "";
+    const normalized = toTitleCaseName(slug);
+    return looksLikePersonName(normalized) ? normalized : "";
+  } catch {
+    return "";
+  }
+}
+
 function extractAuthorFromProfileLinks(card) {
   const links = Array.from(card.querySelectorAll("a[href*='/in/']"));
   const candidates = [];
   for (const link of links) {
+    const hrefAuthor = extractAuthorFromProfileSlug(link.getAttribute("href") || "");
+    if (hrefAuthor) candidates.push(hrefAuthor);
+
     const text = normalizeWhitespace(link.textContent || "");
     if (text) candidates.push(text);
+
     const aria = normalizeWhitespace(link.getAttribute("aria-label") || "");
     const labelMatch = aria.match(/view\s+(.+?)['’]s?\s+profile/i);
     if (labelMatch?.[1]) {
