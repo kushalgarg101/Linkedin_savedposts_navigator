@@ -4,6 +4,7 @@
   right: 16px;
   z-index: 999999;
   font-family: "Segoe UI", Tahoma, sans-serif;
+  color: #1f1f1f;
 }
 
 #lsn-toggle {
@@ -113,6 +114,24 @@
   padding: 7px 8px;
   font-size: 12px;
   background: #fff;
+  color: #1f1f1f;
+  -webkit-text-fill-color: #1f1f1f;
+  caret-color: #1f1f1f;
+  opacity: 1;
+}
+
+#lsn-q::placeholder,
+#lsn-author::placeholder,
+#lsn-dom::placeholder {
+  color: #66737f;
+  opacity: 1;
+}
+
+#lsn-type option,
+#lsn-month option,
+#lsn-dow option {
+  color: #1f1f1f;
+  background: #fff;
 }
 
 .lsn-filter-grid {
@@ -135,6 +154,7 @@
   border-radius: 8px;
   padding: 7px 6px;
   font-size: 12px;
+  color: #1f1f1f;
   cursor: pointer;
 }
 
@@ -166,6 +186,7 @@
   border-radius: 8px;
   padding: 5px 8px;
   font-size: 11px;
+  color: #1f1f1f;
   cursor: pointer;
 }
 
