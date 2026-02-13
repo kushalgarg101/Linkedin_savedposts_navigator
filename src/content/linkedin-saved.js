@@ -121,13 +121,14 @@ function linkFromSelectors(root, selectors) {
 }
 
 function queryCards() {
+  let best = [];
   for (const selector of CARD_SELECTORS) {
     const nodes = document.querySelectorAll(selector);
-    if (nodes.length >= 3) {
-      return Array.from(nodes);
+    if (nodes.length > best.length) {
+      best = Array.from(nodes);
     }
   }
-  return [];
+  return best;
 }
 
 function getScrollContainer() {
@@ -159,8 +160,9 @@ function isNearBottom(container) {
   return scrollTop + clientHeight >= scrollHeight - Math.max(160, Math.floor(clientHeight * 0.15));
 }
 
-function observeDomGrowth(timeoutMs = LOAD_WAIT_MS) {
+function observeDomGrowth(target, timeoutMs = LOAD_WAIT_MS) {
   return new Promise((resolve) => {
+    const observedTarget = target || document.querySelector("main") || document.body;
     let settled = false;
     const timer = setTimeout(() => {
       if (!settled) {
@@ -171,14 +173,17 @@ function observeDomGrowth(timeoutMs = LOAD_WAIT_MS) {
     }, timeoutMs);
 
     const observer = new MutationObserver((mutations) => {
-      const grew = mutations.some((m) => (m.addedNodes?.length || 0) > 0);
+      const grew = mutations.some((m) => {
+        const nodes = Array.from(m.addedNodes || []);
+        return nodes.some((node) => node?.nodeType === Node.ELEMENT_NODE);
+      });
       if (!grew || settled) return;
       settled = true;
       clearTimeout(timer);
       observer.disconnect();
       resolve(true);
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(observedTarget, { childList: true, subtree: true });
   });
 }
 
@@ -230,6 +235,7 @@ class GuidedSyncEngine {
     this.stagnantCycles = 0;
     this.ticks = 0;
     this.scrollContainer = null;
+    this.loopPromise = null;
   }
 
   async start({ reset = false } = {}) {
@@ -246,9 +252,10 @@ class GuidedSyncEngine {
     this.running = true;
     this.paused = false;
     await sendMessage(MESSAGE_TYPES.SYNC_START, { reset });
-    this.loop().catch((e) => {
+    this.loopPromise = this.loop().catch((e) => {
       this.running = false;
       this.paused = false;
+      this.loopPromise = null;
       console.error("LinkedIn Saved Navigator sync loop failed", e);
     });
   }
@@ -262,12 +269,20 @@ class GuidedSyncEngine {
   }
 
   async resume() {
-    if (!this.running || !this.paused) {
+    if (!this.paused) {
       return;
     }
     this.paused = false;
+    this.running = true;
     await sendMessage(MESSAGE_TYPES.SYNC_RESUME, {});
-    this.loop();
+    if (!this.loopPromise) {
+      this.loopPromise = this.loop().catch((e) => {
+        this.running = false;
+        this.paused = false;
+        this.loopPromise = null;
+        console.error("LinkedIn Saved Navigator sync loop failed", e);
+      });
+    }
   }
 
   async loop() {
@@ -283,7 +298,7 @@ class GuidedSyncEngine {
       }
 
       await tickScroll(this.scrollContainer);
-      const growthSeen = await observeDomGrowth(LOAD_WAIT_MS);
+      const growthSeen = await observeDomGrowth(this.scrollContainer, LOAD_WAIT_MS);
       await sleep(TICK_MS);
 
       const cardCountAfter = queryCards().length;
@@ -328,8 +343,11 @@ class GuidedSyncEngine {
 
       this.ticks += 1;
     }
-    this.running = false;
-    this.paused = false;
+    if (!this.paused) {
+      this.running = false;
+      this.paused = false;
+    }
+    this.loopPromise = null;
   }
 }
 
@@ -526,22 +544,29 @@ function renderResults(payload) {
 }
 
 async function performSearch(page = 1) {
-  const queryText = el("lsn-q")?.value || "";
-  const filters = getFiltersFromUi();
-  const allMatches = Boolean(el("lsn-all-matches")?.checked);
-  const response = await sendMessage(MESSAGE_TYPES.SEARCH_QUERY, {
-    queryText,
-    filters,
-    page,
-    pageSize: allMatches ? 0 : 50,
-  });
-  if (response?.ok) {
-    renderResults(response.data);
-    return;
-  }
-  const list = el("lsn-results-list");
-  if (list) {
-    list.innerHTML = `<p class="lsn-empty">Search failed: ${escapeHtml(response?.error || "unknown error")}</p>`;
+  try {
+    const queryText = el("lsn-q")?.value || "";
+    const filters = getFiltersFromUi();
+    const allMatches = Boolean(el("lsn-all-matches")?.checked);
+    const response = await sendMessage(MESSAGE_TYPES.SEARCH_QUERY, {
+      queryText,
+      filters,
+      page,
+      pageSize: allMatches ? 0 : 50,
+    });
+    if (response?.ok) {
+      renderResults(response.data);
+      return;
+    }
+    const list = el("lsn-results-list");
+    if (list) {
+      list.innerHTML = `<p class="lsn-empty">Search failed: ${escapeHtml(response?.error || "unknown error")}</p>`;
+    }
+  } catch (e) {
+    const list = el("lsn-results-list");
+    if (list) {
+      list.innerHTML = `<p class="lsn-empty">Search failed: ${escapeHtml(String(e?.message || e))}</p>`;
+    }
   }
 }
 
