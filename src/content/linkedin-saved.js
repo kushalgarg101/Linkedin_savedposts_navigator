@@ -556,7 +556,7 @@ function renderResults(payload) {
   nextBtn.disabled = page >= totalPages;
   pageLabel.textContent = `Page ${page} / ${totalPages}`;
   meta.textContent = `Found ${total} posts`;
-  if (payload?.returnAll) {
+  if (Boolean(el("lsn-all-matches")?.checked)) {
     meta.textContent += " | high-volume mode";
   }
 
