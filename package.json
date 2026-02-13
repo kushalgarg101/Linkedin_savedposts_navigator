@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:e2e:bootstrap": "node e2e/bootstrap-auth.mjs",
+    "test:e2e:linkedin": "node e2e/linkedin-saved.e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.53.0"
   }
 }

@@ -46,3 +46,36 @@ A Chrome/Edge extension that lets you index and search LinkedIn saved posts dire
 ```bash
 npm test
 ```
+
+## Browser E2E (real LinkedIn page)
+
+This project includes Playwright scripts that exercise the extension on the real saved-posts page.
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Bootstrap authenticated profile (manual one-time login):
+
+```bash
+npm run test:e2e:bootstrap
+```
+
+3. Run real-page E2E:
+
+```bash
+npm run test:e2e:linkedin
+```
+
+Environment variables:
+- `LSN_E2E_PROFILE_DIR`: persistent browser profile directory.
+- `LSN_E2E_EXTENSION_DIR`: unpacked extension path (defaults to repo root).
+- `LSN_E2E_TARGET_URL`: defaults to `https://www.linkedin.com/my-items/saved-posts/`.
+- `LSN_E2E_TIMEOUT_MS`: E2E timeout in ms (default `120000`).
+- `LSN_E2E_EXPECT_MIN_INDEXED`: require minimum indexed posts during run (default `0`).
+
+Notes:
+- These E2E scripts use a real browser and real LinkedIn session.
+- If LinkedIn redirects to login during E2E, run bootstrap again and complete login.
