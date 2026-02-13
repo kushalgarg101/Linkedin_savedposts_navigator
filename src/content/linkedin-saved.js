@@ -53,10 +53,38 @@ const searchState = {
   page: 1,
   totalPages: 1,
 };
+let runtimeInvalidated = false;
+let statusPollTimer = null;
 
 function logError(context, error) {
   const detail = error instanceof Error ? `${error.message}\n${error.stack || ""}` : String(error);
   console.error(`[LSN] ${context}: ${detail}`);
+}
+
+function isRuntimeInvalidationError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return message.includes("extension context invalidated");
+}
+
+function showRuntimeInvalidationNotice() {
+  const node = document.getElementById("lsn-runtime-notice");
+  if (!node) return;
+  node.textContent = "Extension reloaded. Refresh this LinkedIn tab to continue.";
+  node.style.display = "block";
+}
+
+function handleRuntimeInvalidation(error) {
+  if (runtimeInvalidated) return;
+  runtimeInvalidated = true;
+  logError("runtime invalidated", error);
+  showRuntimeInvalidationNotice();
+  if (window.__LSN_SYNC_ENGINE__?.forceStop) {
+    window.__LSN_SYNC_ENGINE__.forceStop();
+  }
+  if (statusPollTimer) {
+    clearTimeout(statusPollTimer);
+    statusPollTimer = null;
+  }
 }
 
 function hashString(input) {
@@ -239,9 +267,15 @@ function sleep(ms) {
 }
 
 async function sendMessage(type, payload = {}) {
+  if (runtimeInvalidated) {
+    throw new Error("Extension context invalidated. Refresh page.");
+  }
   try {
     return await chrome.runtime.sendMessage({ type, payload });
   } catch (error) {
+    if (isRuntimeInvalidationError(error)) {
+      handleRuntimeInvalidation(error);
+    }
     logError(`sendMessage ${type}`, error);
     throw error;
   }
@@ -314,6 +348,12 @@ class GuidedSyncEngine {
         logError("sync loop failed", e);
       });
     }
+  }
+
+  forceStop() {
+    this.running = false;
+    this.paused = false;
+    this.loopPromise = null;
   }
 
   async loop() {
@@ -404,6 +444,7 @@ function createSidebar() {
         <h2>Saved Navigator</h2>
         <span id="lsn-status-pill">idle</span>
       </header>
+      <p id="lsn-runtime-notice" style="display:none;"></p>
       <div class="lsn-controls">
         <button id="lsn-start">Start Sync</button>
         <button id="lsn-pause">Pause</button>
@@ -648,15 +689,24 @@ function clearFilters() {
 }
 
 async function pollSyncStatus() {
+  if (runtimeInvalidated) {
+    return;
+  }
   try {
     const response = await sendMessage(MESSAGE_TYPES.SYNC_STATUS, {});
     if (response?.ok) {
       renderSyncStatus(response.data);
     }
   } catch (e) {
+    if (isRuntimeInvalidationError(e)) {
+      handleRuntimeInvalidation(e);
+      return;
+    }
     logError("status poll failed", e);
   } finally {
-    setTimeout(pollSyncStatus, POLL_MS);
+    if (!runtimeInvalidated) {
+      statusPollTimer = setTimeout(pollSyncStatus, POLL_MS);
+    }
   }
 }
 

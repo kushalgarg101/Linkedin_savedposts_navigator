@@ -45,6 +45,16 @@
   color: #1f1f1f;
 }
 
+#lsn-runtime-notice {
+  margin: 8px 0 0;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #ffd8a8;
+  background: #fff4e5;
+  color: #7a3e00;
+  font-size: 12px;
+}
+
 #lsn-status-pill {
   border-radius: 999px;
   padding: 3px 8px;
