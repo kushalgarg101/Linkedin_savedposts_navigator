@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "description": "Search and filter LinkedIn saved posts from an in-page sidebar.",
   "permissions": ["storage", "tabs"],
-  "host_permissions": ["https://www.linkedin.com/*"],
+  "host_permissions": [
+    "https://www.linkedin.com/my-items/saved-posts/*",
+    "https://www.linkedin.com/my-items/saved-posts/"
+  ],
   "background": {
     "service_worker": "src/background/service-worker.js",
     "type": "module"

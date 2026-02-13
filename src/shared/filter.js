@@ -19,8 +19,9 @@ function inDateRange(post, dateFrom, dateTo) {
   if (!dateFrom && !dateTo) return true;
   const d = parseIso(post.postDate);
   if (!d) return false;
-  if (dateFrom && d < new Date(dateFrom)) return false;
-  if (dateTo && d > new Date(dateTo)) return false;
+  const postDay = d.toISOString().slice(0, 10);
+  if (dateFrom && postDay < dateFrom) return false;
+  if (dateTo && postDay > dateTo) return false;
   return true;
 }
 

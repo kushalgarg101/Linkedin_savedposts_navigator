@@ -10,6 +10,17 @@ import { loadSyncState, saveSyncState, upsertPosts, searchPosts, getPostById } f
 
 let syncState = createDefaultSyncState();
 
+function isAllowedPostUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    if (parsed.protocol !== "https:") return false;
+    if (parsed.hostname !== "www.linkedin.com" && parsed.hostname !== "linkedin.com") return false;
+    return parsed.pathname.includes("/feed/update/") || parsed.pathname.includes("/posts/");
+  } catch {
+    return false;
+  }
+}
+
 async function hydrateSyncState() {
   try {
     const data = await loadSyncState();
@@ -111,6 +122,9 @@ async function handleOpenPost(payload) {
   const post = await getPostById(postId);
   if (!post?.postUrl) {
     return err("Post URL not found");
+  }
+  if (!isAllowedPostUrl(post.postUrl)) {
+    return err("Blocked unsafe post URL");
   }
   await chrome.tabs.create({ url: post.postUrl });
   return ok({ opened: true });

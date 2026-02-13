@@ -19,7 +19,6 @@ const CARD_SELECTORS = [
 const LINK_SELECTORS = [
   "a[href*='/feed/update/']",
   "a[href*='/posts/']",
-  "a[href*='linkedin.com']",
 ];
 
 const AUTHOR_SELECTORS = [
@@ -120,6 +119,19 @@ function linkFromSelectors(root, selectors) {
   return "";
 }
 
+function canonicalizePostUrl(url) {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.protocol !== "https:") return "";
+    if (parsed.hostname !== "www.linkedin.com" && parsed.hostname !== "linkedin.com") return "";
+    if (!parsed.pathname.includes("/feed/update/") && !parsed.pathname.includes("/posts/")) return "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
 function queryCards() {
   let best = [];
   for (const selector of CARD_SELECTORS) {
@@ -191,11 +203,11 @@ function extractVisibleBatch(seenIds) {
   const cards = queryCards();
   const items = [];
   for (const card of cards) {
-    const postUrl = linkFromSelectors(card, LINK_SELECTORS);
+    const postUrl = canonicalizePostUrl(linkFromSelectors(card, LINK_SELECTORS));
     const authorName = textFromSelectors(card, AUTHOR_SELECTORS);
     const dateLabel = textFromSelectors(card, DATE_SELECTORS);
     const contentText = textFromSelectors(card, TEXT_SELECTORS) || card.textContent || "";
-    if (!postUrl && !contentText.trim()) {
+    if (!postUrl) {
       continue;
     }
     const normalized = normalizeSavedPost({ postUrl, authorName, dateLabel, contentText });
