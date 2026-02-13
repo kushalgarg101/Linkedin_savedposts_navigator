@@ -271,14 +271,22 @@ function sleep(ms) {
 
 async function sendMessage(type, payload = {}) {
   if (runtimeInvalidated) {
-    throw new Error("Extension context invalidated. Refresh page.");
+    return {
+      ok: false,
+      error: "Extension context invalidated. Refresh page.",
+      invalidated: true,
+    };
   }
   try {
     return await chrome.runtime.sendMessage({ type, payload });
   } catch (error) {
     if (isRuntimeInvalidationError(error)) {
       handleRuntimeInvalidation(error);
-      throw new Error("Extension context invalidated. Refresh page.");
+      return {
+        ok: false,
+        error: "Extension context invalidated. Refresh page.",
+        invalidated: true,
+      };
     }
     logError(`sendMessage ${type}`, error);
     throw error;
@@ -401,6 +409,12 @@ class GuidedSyncEngine {
           cardCount: cardCountAfter,
         },
       });
+
+      if (response?.invalidated) {
+        this.running = false;
+        this.paused = false;
+        return;
+      }
 
       if (!response?.ok) {
         this.running = false;
@@ -764,6 +778,9 @@ async function pollSyncStatus() {
   }
   try {
     const response = await sendMessage(MESSAGE_TYPES.SYNC_STATUS, {});
+    if (response?.invalidated) {
+      return;
+    }
     if (response?.ok) {
       renderSyncStatus(response.data);
       const indexed = Number(response.data?.itemsIndexed || 0);
