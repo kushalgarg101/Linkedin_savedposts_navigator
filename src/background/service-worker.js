@@ -6,18 +6,15 @@ import {
   ok,
   err,
 } from "../shared/messages.js";
-
-const STORAGE_KEYS = Object.freeze({
-  SYNC_STATE: "lsn_sync_state",
-});
+import { loadSyncState, saveSyncState, upsertPosts, searchPosts, getPostById } from "../shared/db.js";
 
 let syncState = createDefaultSyncState();
 
-async function loadSyncState() {
+async function hydrateSyncState() {
   try {
-    const data = await chrome.storage.local.get(STORAGE_KEYS.SYNC_STATE);
-    if (data?.[STORAGE_KEYS.SYNC_STATE]) {
-      syncState = { ...createDefaultSyncState(), ...data[STORAGE_KEYS.SYNC_STATE] };
+    const data = await loadSyncState();
+    if (data) {
+      syncState = { ...createDefaultSyncState(), ...data };
     }
   } catch (e) {
     syncState = { ...createDefaultSyncState(), status: SYNC_STATUSES.ERROR, lastError: String(e) };
@@ -26,7 +23,7 @@ async function loadSyncState() {
 
 async function persistSyncState() {
   syncState.updatedAt = Date.now();
-  await chrome.storage.local.set({ [STORAGE_KEYS.SYNC_STATE]: syncState });
+  await saveSyncState(syncState);
 }
 
 async function setState(patch) {
@@ -74,19 +71,44 @@ async function handleIndexBatch(payload) {
   const emptyBatch = items.length === 0;
   const nextEmptyCycles = emptyBatch ? syncState.emptyCycles + 1 : 0;
   const nextStatus = nextEmptyCycles >= 4 ? SYNC_STATUSES.COMPLETED : syncState.status;
+  const stats = await upsertPosts(items);
 
   return ok(
     await setState({
-      itemsIndexed: syncState.itemsIndexed + items.length,
+      itemsIndexed: stats.total,
       batchesSeen: syncState.batchesSeen + 1,
       emptyCycles: nextEmptyCycles,
       status: nextStatus,
+      lastCheckpoint: payload?.checkpoint || null,
     }),
   );
 }
 
 function handleSyncStatus() {
   return ok(syncState);
+}
+
+async function handleSearchQuery(payload) {
+  const result = await searchPosts({
+    queryText: payload?.queryText || "",
+    filters: payload?.filters || {},
+    page: Number(payload?.page || 1),
+    pageSize: Number(payload?.pageSize || 30),
+  });
+  return ok(result);
+}
+
+async function handleOpenPost(payload) {
+  const postId = String(payload?.postId || "");
+  if (!postId) {
+    return err("postId is required");
+  }
+  const post = await getPostById(postId);
+  if (!post?.postUrl) {
+    return err("Post URL not found");
+  }
+  await chrome.tabs.create({ url: post.postUrl });
+  return ok({ opened: true });
 }
 
 async function handleMessage(message) {
@@ -105,23 +127,23 @@ async function handleMessage(message) {
     case MESSAGE_TYPES.INDEX_BATCH:
       return handleIndexBatch(message.payload);
     case MESSAGE_TYPES.SEARCH_QUERY:
-      return err("SEARCH_QUERY not implemented yet");
+      return handleSearchQuery(message.payload);
     case MESSAGE_TYPES.OPEN_POST:
-      return err("OPEN_POST not implemented yet");
+      return handleOpenPost(message.payload);
     default:
       return err("Unsupported message type");
   }
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  loadSyncState();
+  hydrateSyncState();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  loadSyncState();
+  hydrateSyncState();
 });
 
-loadSyncState();
+hydrateSyncState();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   handleMessage(message)
