@@ -142,6 +142,19 @@ function normalizeSavedPost(raw) {
   };
 }
 
+function deriveAuthorFromContent(contentText) {
+  const text = normalizeWhitespace(contentText || "");
+  if (!text) return "";
+  const match = text.match(/^(.{2,80}?)\s*View\s+.+?\s+profile/i);
+  if (!match) return "";
+  return normalizeWhitespace(match[1]).replace(/\s+$/, "");
+}
+
+function stripProfileHeaderNoise(contentText) {
+  const text = normalizeWhitespace(contentText || "");
+  return text.replace(/^.{2,80}?\s*View\s+.+?\s+profile\s*/i, "").trim();
+}
+
 function textFromSelectors(root, selectors) {
   for (const selector of selectors) {
     const node = root.querySelector(selector);
@@ -251,11 +264,18 @@ function extractVisibleBatch(seenIds) {
     const postUrl = canonicalizePostUrl(linkFromSelectors(card, LINK_SELECTORS));
     const authorName = textFromSelectors(card, AUTHOR_SELECTORS);
     const dateLabel = textFromSelectors(card, DATE_SELECTORS);
-    const contentText = textFromSelectors(card, TEXT_SELECTORS) || card.textContent || "";
+    const rawText = textFromSelectors(card, TEXT_SELECTORS) || card.textContent || "";
+    const derivedAuthor = deriveAuthorFromContent(rawText);
+    const contentText = stripProfileHeaderNoise(rawText);
     if (!postUrl) {
       continue;
     }
-    const normalized = normalizeSavedPost({ postUrl, authorName, dateLabel, contentText });
+    const normalized = normalizeSavedPost({
+      postUrl,
+      authorName: authorName || derivedAuthor,
+      dateLabel,
+      contentText,
+    });
     if (seenIds.has(normalized.id)) {
       continue;
     }
@@ -614,7 +634,17 @@ function renderHealthStats(payload) {
       const author = escapeHtml(row.authorName || "(no author)");
       const type = escapeHtml(row.contentType || "unknown");
       const snippet = escapeHtml(row.textSnippet || "(no text)");
-      return `<p class="lsn-health-row"><strong>${author}</strong> [${type}] - ${snippet}</p>`;
+      const flags = `${row.hasText ? "text" : "no-text"} | ${row.hasDate ? "date" : "no-date"}`;
+      return `
+        <article class="lsn-health-row">
+          <div class="lsn-health-row-top">
+            <strong>${author}</strong>
+            <span class="lsn-health-type">${type}</span>
+          </div>
+          <p class="lsn-health-snippet">${snippet}</p>
+          <small class="lsn-health-flags">${escapeHtml(flags)}</small>
+        </article>
+      `;
     })
     .join("");
 }
