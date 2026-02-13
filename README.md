@@ -6,6 +6,7 @@ A Chrome/Edge extension that lets you index and search LinkedIn saved posts dire
 
 - Injects a right sidebar on `linkedin.com/my-items/saved-posts`.
 - Runs guided sync for lazy-loaded saved posts (LinkedIn loads a small chunk, then more after scrolling).
+- Uses end-of-feed detection that waits for repeated no-growth cycles near bottom before marking sync complete.
 - Stores posts in local IndexedDB with dedupe by stable id.
 - Supports text search and metadata filters:
   - author
@@ -15,6 +16,7 @@ A Chrome/Edge extension that lets you index and search LinkedIn saved posts dire
   - day of month
   - content type
 - Opens original post URL from results.
+- Optional `Return all matches` mode to fetch all filtered results at once.
 
 ## Install (Developer Mode)
 
