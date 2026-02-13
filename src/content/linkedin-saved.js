@@ -145,14 +145,6 @@ function normalizeSavedPost(raw) {
   };
 }
 
-function deriveAuthorFromContent(contentText) {
-  const text = normalizeWhitespace(contentText || "");
-  if (!text) return "";
-  const match = text.match(/^(.{2,80}?)\s*View\s+.+?\s+profile/i);
-  if (!match) return "";
-  return normalizeWhitespace(match[1]).replace(/\s+$/, "");
-}
-
 function stripProfileHeaderNoise(contentText) {
   const text = normalizeWhitespace(contentText || "");
   const cleaned = text
@@ -177,9 +169,23 @@ function isInvalidAuthorText(text) {
   return false;
 }
 
+function looksLikePersonName(text) {
+  const candidate = normalizeWhitespace(text || "");
+  if (!candidate || candidate.length < 3 || candidate.length > 80) return false;
+  if (candidate.includes("|") || candidate.includes(":") || candidate.includes("@")) return false;
+  if (/\d/.test(candidate)) return false;
+  if (/\b(author|engineer|research|founder|professor|student|creator|lead|head|manager)\b/i.test(candidate)) {
+    return false;
+  }
+  const words = candidate.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 5) return false;
+  return words.every((word) => /^[\p{L}\p{M}][\p{L}\p{M}.'-]*$/u.test(word));
+}
+
 function scoreAuthorCandidate(text) {
   const candidate = normalizeWhitespace(text || "");
   if (isInvalidAuthorText(candidate)) return -1;
+  if (!looksLikePersonName(candidate)) return -1;
   const words = candidate.split(/\s+/).filter(Boolean);
   let score = 0;
   if (words.length >= 2 && words.length <= 5) score += 3;
@@ -204,10 +210,18 @@ function pickBestAuthor(candidates) {
 
 function extractAuthorFromProfileLinks(card) {
   const links = Array.from(card.querySelectorAll("a[href*='/in/']"));
-  const candidates = links
-    .map((link) => normalizeWhitespace(link.textContent || ""))
-    .filter(Boolean)
-    .filter((text) => /^[\p{L}\p{M}\p{N} .,'\-]+$/u.test(text));
+  const candidates = [];
+  for (const link of links) {
+    const text = normalizeWhitespace(link.textContent || "");
+    if (text) candidates.push(text);
+    const aria = normalizeWhitespace(link.getAttribute("aria-label") || "");
+    const labelMatch = aria.match(/view\s+(.+?)['’]s?\s+profile/i);
+    if (labelMatch?.[1]) {
+      candidates.push(normalizeWhitespace(labelMatch[1]));
+    }
+    const title = normalizeWhitespace(link.getAttribute("title") || "");
+    if (title) candidates.push(title);
+  }
   return pickBestAuthor(candidates);
 }
 
@@ -363,14 +377,13 @@ function extractVisibleBatch(seenIds) {
     const dateLabel = textFromSelectors(card, DATE_SELECTORS);
     const rawText = extractBestContentText(card);
     const linkAuthor = extractAuthorFromProfileLinks(card);
-    const derivedAuthor = deriveAuthorFromContent(rawText);
     const contentText = stripProfileHeaderNoise(rawText);
     if (!postUrl) {
       continue;
     }
     const normalized = normalizeSavedPost({
       postUrl,
-      authorName: pickBestAuthor([authorName, linkAuthor, derivedAuthor]),
+      authorName: pickBestAuthor([authorName, linkAuthor]),
       dateLabel,
       contentText,
     });
