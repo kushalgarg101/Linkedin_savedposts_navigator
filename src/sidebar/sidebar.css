@@ -1,1 +1,95 @@
-/* Placeholder sidebar styles. */
+#lsn-root {
+  position: fixed;
+  top: 88px;
+  right: 16px;
+  z-index: 999999;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+}
+
+#lsn-toggle {
+  border: 1px solid #004182;
+  border-radius: 999px;
+  background: #0a66c2;
+  color: #fff;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+#lsn-panel {
+  width: 320px;
+  margin-top: 10px;
+  display: none;
+  background: #fff;
+  border: 1px solid #d6d6d6;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  padding: 12px;
+}
+
+#lsn-panel.open {
+  display: block;
+}
+
+.lsn-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lsn-header h2 {
+  margin: 0;
+  font-size: 14px;
+  color: #1f1f1f;
+}
+
+#lsn-status-pill {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  background: #eef3f8;
+  color: #444;
+}
+
+#lsn-status-pill[data-status="running"] {
+  background: #e7f3ff;
+  color: #0a66c2;
+}
+
+#lsn-status-pill[data-status="completed"] {
+  background: #e7f7ed;
+  color: #0f7b31;
+}
+
+#lsn-status-pill[data-status="error"] {
+  background: #fdebec;
+  color: #b3001b;
+}
+
+.lsn-controls {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.lsn-controls button {
+  border: 1px solid #cfd8e3;
+  background: #f7f9fb;
+  border-radius: 8px;
+  padding: 7px 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lsn-controls button:hover {
+  background: #eef3f8;
+}
+
+#lsn-progress {
+  margin: 10px 0 0;
+  color: #444;
+  font-size: 12px;
+}

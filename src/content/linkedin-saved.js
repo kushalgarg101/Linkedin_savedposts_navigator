@@ -44,6 +44,7 @@ const TEXT_SELECTORS = [
 const TICK_MS = 1250;
 const MAX_EMPTY_CYCLES = 4;
 const MAX_TICKS = 1500;
+const POLL_MS = 1500;
 
 function hashString(input) {
   let h = 2166136261;
@@ -240,6 +241,81 @@ class GuidedSyncEngine {
 if (!window.__LSN_SYNC_ENGINE__) {
   window.__LSN_SYNC_ENGINE__ = new GuidedSyncEngine();
 }
+
+function el(id) {
+  return document.getElementById(id);
+}
+
+function createSidebar() {
+  if (document.getElementById("lsn-root")) {
+    return;
+  }
+
+  const root = document.createElement("aside");
+  root.id = "lsn-root";
+  root.innerHTML = `
+    <button id="lsn-toggle" title="Toggle navigator">Saved Navigator</button>
+    <section id="lsn-panel" class="open">
+      <header class="lsn-header">
+        <h2>Saved Navigator</h2>
+        <span id="lsn-status-pill">idle</span>
+      </header>
+      <div class="lsn-controls">
+        <button id="lsn-start">Start Sync</button>
+        <button id="lsn-pause">Pause</button>
+        <button id="lsn-resume">Resume</button>
+      </div>
+      <p id="lsn-progress">Indexed: 0</p>
+      <div id="lsn-query-zone"></div>
+      <div id="lsn-results-zone"></div>
+    </section>
+  `;
+  document.body.appendChild(root);
+
+  el("lsn-toggle")?.addEventListener("click", () => {
+    el("lsn-panel")?.classList.toggle("open");
+  });
+  el("lsn-start")?.addEventListener("click", () => {
+    window.__LSN_SYNC_ENGINE__.start({ reset: true });
+  });
+  el("lsn-pause")?.addEventListener("click", () => {
+    window.__LSN_SYNC_ENGINE__.pause();
+  });
+  el("lsn-resume")?.addEventListener("click", () => {
+    window.__LSN_SYNC_ENGINE__.resume();
+  });
+}
+
+function renderSyncStatus(data) {
+  const status = data?.status || "idle";
+  const indexed = Number(data?.itemsIndexed || 0);
+  const batches = Number(data?.batchesSeen || 0);
+  const pill = el("lsn-status-pill");
+  const progress = el("lsn-progress");
+  if (pill) {
+    pill.textContent = status;
+    pill.dataset.status = status;
+  }
+  if (progress) {
+    progress.textContent = `Indexed: ${indexed} | Batches: ${batches}`;
+  }
+}
+
+async function pollSyncStatus() {
+  try {
+    const response = await sendMessage(MESSAGE_TYPES.SYNC_STATUS, {});
+    if (response?.ok) {
+      renderSyncStatus(response.data);
+    }
+  } catch (e) {
+    console.debug("LSN status poll failed", e);
+  } finally {
+    setTimeout(pollSyncStatus, POLL_MS);
+  }
+}
+
+createSidebar();
+pollSyncStatus();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message !== "object") {
