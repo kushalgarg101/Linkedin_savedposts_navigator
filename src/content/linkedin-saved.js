@@ -6,6 +6,7 @@ const MESSAGE_TYPES = Object.freeze({
   INDEX_BATCH: "INDEX_BATCH",
   SEARCH_QUERY: "SEARCH_QUERY",
   OPEN_POST: "OPEN_POST",
+  HEALTH_STATS: "HEALTH_STATS",
 });
 
 const CARD_SELECTORS = [
@@ -55,6 +56,8 @@ const searchState = {
 };
 let runtimeInvalidated = false;
 let statusPollTimer = null;
+let lastHealthLoadedAt = 0;
+let lastIndexedSeen = -1;
 
 function logError(context, error) {
   const detail = error instanceof Error ? `${error.message}\n${error.stack || ""}` : String(error);
@@ -452,6 +455,14 @@ function createSidebar() {
         <button id="lsn-resume">Resume</button>
       </div>
       <p id="lsn-progress">Indexed: 0</p>
+      <section id="lsn-health">
+        <div class="lsn-health-head">
+          <strong>Data Health</strong>
+          <button id="lsn-health-refresh">Refresh</button>
+        </div>
+        <p id="lsn-health-summary">Not loaded</p>
+        <div id="lsn-health-samples"></div>
+      </section>
       <div id="lsn-query-zone">
         <input id="lsn-q" placeholder="Search text..." />
         <div class="lsn-filter-grid">
@@ -527,6 +538,7 @@ function createSidebar() {
   el("lsn-resume")?.addEventListener("click", () => {
     window.__LSN_SYNC_ENGINE__.resume();
   });
+  el("lsn-health-refresh")?.addEventListener("click", () => loadHealthStats({ force: true }));
   el("lsn-search")?.addEventListener("click", () => performSearch(1));
   el("lsn-clear")?.addEventListener("click", () => clearFilters());
   el("lsn-prev")?.addEventListener("click", () => {
@@ -559,6 +571,63 @@ function renderSyncStatus(data) {
   }
   if (progress) {
     progress.textContent = `Indexed: ${indexed} | Batches: ${batches}`;
+  }
+}
+
+function renderHealthStats(payload) {
+  const summary = el("lsn-health-summary");
+  const samples = el("lsn-health-samples");
+  if (!summary || !samples) return;
+
+  const total = Number(payload?.total || 0);
+  const withAuthor = Number(payload?.withAuthor || 0);
+  const withText = Number(payload?.withText || 0);
+  const withDate = Number(payload?.withDate || 0);
+  const byType = payload?.byType || {};
+
+  summary.textContent =
+    `Total: ${total} | Author: ${withAuthor} | Text: ${withText} | Date: ${withDate}` +
+    ` | Types A/V/D/I/U: ${byType.article || 0}/${byType.video || 0}/${byType.document || 0}/${byType.image || 0}/${byType.unknown || 0}`;
+
+  const rows = Array.isArray(payload?.samples) ? payload.samples : [];
+  if (rows.length === 0) {
+    samples.innerHTML = "<p class='lsn-empty'>No sample rows.</p>";
+    return;
+  }
+
+  samples.innerHTML = rows
+    .map((row) => {
+      const author = escapeHtml(row.authorName || "(no author)");
+      const type = escapeHtml(row.contentType || "unknown");
+      const snippet = escapeHtml(row.textSnippet || "(no text)");
+      return `<p class="lsn-health-row"><strong>${author}</strong> [${type}] - ${snippet}</p>`;
+    })
+    .join("");
+}
+
+async function loadHealthStats({ force = false } = {}) {
+  const summary = el("lsn-health-summary");
+  if (!force && Date.now() - lastHealthLoadedAt < 10000) {
+    return;
+  }
+  if (summary) {
+    summary.textContent = "Loading...";
+  }
+  try {
+    const response = await sendMessage(MESSAGE_TYPES.HEALTH_STATS, { sampleSize: 5 });
+    if (response?.ok) {
+      lastHealthLoadedAt = Date.now();
+      renderHealthStats(response.data);
+      return;
+    }
+    if (summary) {
+      summary.textContent = `Health failed: ${String(response?.error || "unknown error")}`;
+    }
+  } catch (error) {
+    logError("loadHealthStats", error);
+    if (summary) {
+      summary.textContent = `Health failed: ${String(error?.message || error)}`;
+    }
   }
 }
 
@@ -697,6 +766,11 @@ async function pollSyncStatus() {
     const response = await sendMessage(MESSAGE_TYPES.SYNC_STATUS, {});
     if (response?.ok) {
       renderSyncStatus(response.data);
+      const indexed = Number(response.data?.itemsIndexed || 0);
+      if (indexed > 0 && indexed !== lastIndexedSeen) {
+        lastIndexedSeen = indexed;
+        loadHealthStats();
+      }
     }
   } catch (e) {
     if (isRuntimeInvalidationError(e)) {
@@ -764,6 +838,7 @@ function bootstrapOnce() {
   window.__LSN_BOOTSTRAPPED__ = true;
   createSidebar();
   pollSyncStatus();
+  loadHealthStats({ force: true });
 
   window.addEventListener("error", (event) => {
     logError("window error", event?.error || event?.message || "unknown error");

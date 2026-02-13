@@ -105,6 +105,53 @@
   font-size: 12px;
 }
 
+#lsn-health {
+  margin-top: 10px;
+  border: 1px solid #e3e9ef;
+  border-radius: 8px;
+  padding: 8px;
+  background: #fbfcfd;
+}
+
+.lsn-health-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lsn-health-head strong {
+  font-size: 12px;
+  color: #1f1f1f;
+}
+
+#lsn-health-refresh {
+  border: 1px solid #cfd8e3;
+  background: #fff;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #1f1f1f;
+  cursor: pointer;
+}
+
+#lsn-health-summary {
+  margin: 8px 0;
+  font-size: 11px;
+  color: #46515c;
+}
+
+#lsn-health-samples {
+  max-height: 92px;
+  overflow: auto;
+}
+
+.lsn-health-row {
+  margin: 4px 0;
+  font-size: 11px;
+  color: #2e3640;
+}
+
 #lsn-query-zone {
   margin-top: 12px;
 }

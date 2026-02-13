@@ -6,7 +6,7 @@ import {
   ok,
   err,
 } from "../shared/messages.js";
-import { loadSyncState, saveSyncState, upsertPosts, searchPosts, getPostById } from "../shared/db.js";
+import { loadSyncState, saveSyncState, upsertPosts, searchPosts, getPostById, getHealthStats } from "../shared/db.js";
 
 let syncState = createDefaultSyncState();
 const ALLOWED_SENDER_RE = /^https:\/\/www\.linkedin\.com\/my-items\/saved-posts(?:\/|\?|#|$)/i;
@@ -136,6 +136,11 @@ async function handleOpenPost(payload) {
   return ok({ opened: true });
 }
 
+async function handleHealthStats(payload) {
+  const stats = await getHealthStats({ sampleSize: Number(payload?.sampleSize || 5) });
+  return ok(stats);
+}
+
 async function handleMessage(message) {
   if (!isValidMessage(message)) {
     return err("Invalid message shape");
@@ -155,6 +160,8 @@ async function handleMessage(message) {
       return handleSearchQuery(message.payload);
     case MESSAGE_TYPES.OPEN_POST:
       return handleOpenPost(message.payload);
+    case MESSAGE_TYPES.HEALTH_STATS:
+      return handleHealthStats(message.payload);
     default:
       return err("Unsupported message type");
   }

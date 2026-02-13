@@ -6,6 +6,7 @@ export const MESSAGE_TYPES = Object.freeze({
   INDEX_BATCH: "INDEX_BATCH",
   SEARCH_QUERY: "SEARCH_QUERY",
   OPEN_POST: "OPEN_POST",
+  HEALTH_STATS: "HEALTH_STATS",
 });
 
 export const SYNC_STATUSES = Object.freeze({

@@ -17,6 +17,7 @@ A Chrome/Edge extension that lets you index and search LinkedIn saved posts dire
   - content type
 - Opens original post URL from results.
 - Optional `Return all matches` mode to fetch all filtered results at once.
+- Includes a `Data Health` panel to verify indexed data quality (author/text/date coverage and sample rows).
 
 ## Install (Developer Mode)
 

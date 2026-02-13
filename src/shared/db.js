@@ -149,6 +149,63 @@ export async function searchPosts({
   };
 }
 
+export async function getHealthStats({ sampleSize = 5 } = {}) {
+  const db = await getDb();
+  const tx = db.transaction(STORES.POSTS, "readonly");
+  const store = tx.objectStore(STORES.POSTS);
+  const source = store.index("indexedAt");
+
+  let total = 0;
+  let withAuthor = 0;
+  let withText = 0;
+  let withDate = 0;
+  const byType = {
+    article: 0,
+    video: 0,
+    document: 0,
+    image: 0,
+    unknown: 0,
+  };
+  const samples = [];
+
+  await iterateCursor(source, null, "prev", (post) => {
+    total += 1;
+    const author = String(post?.authorName || "").trim();
+    const text = String(post?.contentText || "").trim();
+    const date = String(post?.postDate || "").trim();
+    const type = String(post?.contentType || "unknown").toLowerCase();
+
+    if (author) withAuthor += 1;
+    if (text) withText += 1;
+    if (date) withDate += 1;
+    if (Object.prototype.hasOwnProperty.call(byType, type)) {
+      byType[type] += 1;
+    } else {
+      byType.unknown += 1;
+    }
+
+    if (samples.length < Math.max(1, Math.floor(sampleSize))) {
+      samples.push({
+        id: post?.id || "",
+        authorName: author,
+        contentType: type,
+        hasText: Boolean(text),
+        hasDate: Boolean(date),
+        textSnippet: text.slice(0, 120),
+      });
+    }
+  });
+
+  return {
+    total,
+    withAuthor,
+    withText,
+    withDate,
+    byType,
+    samples,
+  };
+}
+
 function normalizeIsoDateOnly(value) {
   if (!value) return "";
   const parsed = Date.parse(value);
