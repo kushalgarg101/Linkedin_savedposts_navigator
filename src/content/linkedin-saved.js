@@ -1,0 +1,1 @@
+// Placeholder content script; implemented in following commits.

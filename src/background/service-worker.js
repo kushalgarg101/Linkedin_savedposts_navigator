@@ -1,0 +1,1 @@
+// Placeholder service worker; implemented in following commits.
