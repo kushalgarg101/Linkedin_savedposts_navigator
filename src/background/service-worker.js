@@ -9,7 +9,7 @@ import {
 import { loadSyncState, saveSyncState, upsertPosts, searchPosts, getPostById } from "../shared/db.js";
 
 let syncState = createDefaultSyncState();
-const ALLOWED_SENDER_PREFIX = "https://www.linkedin.com/my-items/saved-posts/";
+const ALLOWED_SENDER_RE = /^https:\/\/www\.linkedin\.com\/my-items\/saved-posts(?:\/|\?|#|$)/i;
 
 function isAllowedPostUrl(url) {
   try {
@@ -24,7 +24,7 @@ function isAllowedPostUrl(url) {
 
 function isAllowedSender(sender) {
   const senderUrl = String(sender?.url || "");
-  return senderUrl.startsWith(ALLOWED_SENDER_PREFIX);
+  return ALLOWED_SENDER_RE.test(senderUrl);
 }
 
 async function hydrateSyncState() {
