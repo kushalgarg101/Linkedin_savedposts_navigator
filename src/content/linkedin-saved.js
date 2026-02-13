@@ -54,6 +54,11 @@ const searchState = {
   totalPages: 1,
 };
 
+function logError(context, error) {
+  const detail = error instanceof Error ? `${error.message}\n${error.stack || ""}` : String(error);
+  console.error(`[LSN] ${context}: ${detail}`);
+}
+
 function hashString(input) {
   let h = 2166136261;
   for (let i = 0; i < input.length; i += 1) {
@@ -234,7 +239,12 @@ function sleep(ms) {
 }
 
 async function sendMessage(type, payload = {}) {
-  return chrome.runtime.sendMessage({ type, payload });
+  try {
+    return await chrome.runtime.sendMessage({ type, payload });
+  } catch (error) {
+    logError(`sendMessage ${type}`, error);
+    throw error;
+  }
 }
 
 async function tickScroll(container) {
@@ -277,7 +287,7 @@ class GuidedSyncEngine {
       this.running = false;
       this.paused = false;
       this.loopPromise = null;
-      console.error("LinkedIn Saved Navigator sync loop failed", e);
+      logError("sync loop failed", e);
     });
   }
 
@@ -301,7 +311,7 @@ class GuidedSyncEngine {
         this.running = false;
         this.paused = false;
         this.loopPromise = null;
-        console.error("LinkedIn Saved Navigator sync loop failed", e);
+        logError("sync loop failed", e);
       });
     }
   }
@@ -616,6 +626,7 @@ async function performSearch(page = 1) {
       list.innerHTML = `<p class="lsn-empty">Search failed: ${escapeHtml(response?.error || "unknown error")}</p>`;
     }
   } catch (e) {
+    logError("performSearch", e);
     const list = el("lsn-results-list");
     if (list) {
       list.innerHTML = `<p class="lsn-empty">Search failed: ${escapeHtml(String(e?.message || e))}</p>`;
@@ -643,7 +654,7 @@ async function pollSyncStatus() {
       renderSyncStatus(response.data);
     }
   } catch (e) {
-    console.debug("LSN status poll failed", e);
+    logError("status poll failed", e);
   } finally {
     setTimeout(pollSyncStatus, POLL_MS);
   }
@@ -652,20 +663,54 @@ async function pollSyncStatus() {
 createSidebar();
 pollSyncStatus();
 
+window.addEventListener("error", (event) => {
+  logError("window error", event?.error || event?.message || "unknown error");
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  logError("unhandled rejection", event?.reason || "unknown rejection");
+});
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message !== "object") {
+    sendResponse({ ok: false, error: "Invalid message payload" });
+    return false;
+  }
+  if (!message.type) {
+    sendResponse({ ok: false, error: "Missing message type" });
     return;
   }
   if (message.type === MESSAGE_TYPES.SYNC_START) {
-    window.__LSN_SYNC_ENGINE__.start({ reset: Boolean(message.payload?.reset) }).then(() => sendResponse({ ok: true }));
+    window.__LSN_SYNC_ENGINE__
+      .start({ reset: Boolean(message.payload?.reset) })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => {
+        logError("SYNC_START handler", error);
+        sendResponse({ ok: false, error: String(error?.message || error) });
+      });
     return true;
   }
   if (message.type === MESSAGE_TYPES.SYNC_PAUSE) {
-    window.__LSN_SYNC_ENGINE__.pause().then(() => sendResponse({ ok: true }));
+    window.__LSN_SYNC_ENGINE__
+      .pause()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => {
+        logError("SYNC_PAUSE handler", error);
+        sendResponse({ ok: false, error: String(error?.message || error) });
+      });
     return true;
   }
   if (message.type === MESSAGE_TYPES.SYNC_RESUME) {
-    window.__LSN_SYNC_ENGINE__.resume().then(() => sendResponse({ ok: true }));
+    window.__LSN_SYNC_ENGINE__
+      .resume()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => {
+        logError("SYNC_RESUME handler", error);
+        sendResponse({ ok: false, error: String(error?.message || error) });
+      });
     return true;
   }
+
+  sendResponse({ ok: false, error: `Unsupported content-script message type: ${String(message.type)}` });
+  return false;
 });
