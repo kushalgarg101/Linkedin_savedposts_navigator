@@ -120,6 +120,14 @@
   opacity: 1;
 }
 
+#lsn-type,
+#lsn-month,
+#lsn-dow {
+  background-color: #ffffff !important;
+  color: #1f1f1f !important;
+  border-color: #d0d7e2 !important;
+}
+
 #lsn-q::placeholder,
 #lsn-author::placeholder,
 #lsn-dom::placeholder {
@@ -130,8 +138,8 @@
 #lsn-type option,
 #lsn-month option,
 #lsn-dow option {
-  color: #1f1f1f;
-  background: #fff;
+  color: #1f1f1f !important;
+  background-color: #ffffff !important;
 }
 
 .lsn-filter-grid {
