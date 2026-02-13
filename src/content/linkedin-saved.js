@@ -166,21 +166,49 @@ function stripProfileHeaderNoise(contentText) {
   return cleaned || text;
 }
 
+function isInvalidAuthorText(text) {
+  const normalized = normalizeWhitespace(text || "").toLowerCase();
+  if (!normalized) return true;
+  if (normalized.length < 3 || normalized.length > 80) return true;
+  if (/^(status is offline|offline|view profile|profile|follow|message|connect)$/i.test(normalized)) return true;
+  if (/visible to everyone/i.test(normalized)) return true;
+  if (/\b(status|offline|follower|followers|connection|connections)\b/i.test(normalized)) return true;
+  if (/[<>/]/.test(normalized)) return true;
+  return false;
+}
+
+function scoreAuthorCandidate(text) {
+  const candidate = normalizeWhitespace(text || "");
+  if (isInvalidAuthorText(candidate)) return -1;
+  const words = candidate.split(/\s+/).filter(Boolean);
+  let score = 0;
+  if (words.length >= 2 && words.length <= 5) score += 3;
+  if (/^[\p{L}\p{M}][\p{L}\p{M}.'-]*(?:\s+[\p{L}\p{M}][\p{L}\p{M}.'-]*)+$/u.test(candidate)) score += 3;
+  if (/[A-Z\p{Lu}]/u.test(candidate)) score += 1;
+  if (/\d/.test(candidate)) score -= 2;
+  return score;
+}
+
+function pickBestAuthor(candidates) {
+  let best = "";
+  let bestScore = -1;
+  for (const candidate of candidates) {
+    const score = scoreAuthorCandidate(candidate);
+    if (score > bestScore) {
+      bestScore = score;
+      best = normalizeWhitespace(candidate);
+    }
+  }
+  return bestScore >= 0 ? best : "";
+}
+
 function extractAuthorFromProfileLinks(card) {
   const links = Array.from(card.querySelectorAll("a[href*='/in/']"));
   const candidates = links
     .map((link) => normalizeWhitespace(link.textContent || ""))
     .filter(Boolean)
-    .filter((text) => !/^(view|message|follow|connect)\b/i.test(text))
-    .filter((text) => text.length >= 3 && text.length <= 80)
     .filter((text) => /^[\p{L}\p{M}\p{N} .,'\-]+$/u.test(text));
-
-  if (candidates.length === 0) {
-    return "";
-  }
-
-  candidates.sort((a, b) => b.length - a.length);
-  return candidates[0];
+  return pickBestAuthor(candidates);
 }
 
 function extractPostLinkText(card) {
@@ -342,7 +370,7 @@ function extractVisibleBatch(seenIds) {
     }
     const normalized = normalizeSavedPost({
       postUrl,
-      authorName: authorName || linkAuthor || derivedAuthor,
+      authorName: pickBestAuthor([authorName, linkAuthor, derivedAuthor]),
       dateLabel,
       contentText,
     });
