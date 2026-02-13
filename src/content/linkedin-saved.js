@@ -266,8 +266,56 @@ function createSidebar() {
         <button id="lsn-resume">Resume</button>
       </div>
       <p id="lsn-progress">Indexed: 0</p>
-      <div id="lsn-query-zone"></div>
-      <div id="lsn-results-zone"></div>
+      <div id="lsn-query-zone">
+        <input id="lsn-q" placeholder="Search text..." />
+        <div class="lsn-filter-grid">
+          <input id="lsn-author" placeholder="Author name" />
+          <select id="lsn-type">
+            <option value="">All types</option>
+            <option value="article">Article</option>
+            <option value="video">Video</option>
+            <option value="document">Document</option>
+            <option value="image">Image</option>
+            <option value="unknown">Unknown</option>
+          </select>
+          <input id="lsn-date-from" type="date" />
+          <input id="lsn-date-to" type="date" />
+          <select id="lsn-month">
+            <option value="">Any month</option>
+            <option value="1">Jan</option>
+            <option value="2">Feb</option>
+            <option value="3">Mar</option>
+            <option value="4">Apr</option>
+            <option value="5">May</option>
+            <option value="6">Jun</option>
+            <option value="7">Jul</option>
+            <option value="8">Aug</option>
+            <option value="9">Sep</option>
+            <option value="10">Oct</option>
+            <option value="11">Nov</option>
+            <option value="12">Dec</option>
+          </select>
+          <select id="lsn-dow">
+            <option value="">Any weekday</option>
+            <option value="0">Sun</option>
+            <option value="1">Mon</option>
+            <option value="2">Tue</option>
+            <option value="3">Wed</option>
+            <option value="4">Thu</option>
+            <option value="5">Fri</option>
+            <option value="6">Sat</option>
+          </select>
+          <input id="lsn-dom" type="number" min="1" max="31" placeholder="Day (1-31)" />
+        </div>
+        <div class="lsn-search-actions">
+          <button id="lsn-search">Search</button>
+          <button id="lsn-clear">Clear</button>
+        </div>
+      </div>
+      <div id="lsn-results-zone">
+        <p class="lsn-results-meta">No results yet.</p>
+        <div id="lsn-results-list"></div>
+      </div>
     </section>
   `;
   document.body.appendChild(root);
@@ -284,6 +332,14 @@ function createSidebar() {
   el("lsn-resume")?.addEventListener("click", () => {
     window.__LSN_SYNC_ENGINE__.resume();
   });
+  el("lsn-search")?.addEventListener("click", () => performSearch(1));
+  el("lsn-clear")?.addEventListener("click", () => clearFilters());
+  el("lsn-q")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      performSearch(1);
+    }
+  });
 }
 
 function renderSyncStatus(data) {
@@ -299,6 +355,104 @@ function renderSyncStatus(data) {
   if (progress) {
     progress.textContent = `Indexed: ${indexed} | Batches: ${batches}`;
   }
+}
+
+function escapeHtml(input) {
+  return String(input || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function getFiltersFromUi() {
+  const typeValue = el("lsn-type")?.value || "";
+  const monthValue = Number(el("lsn-month")?.value || 0);
+  const dowValue = Number(el("lsn-dow")?.value || -1);
+  const domValue = Number(el("lsn-dom")?.value || 0);
+  const authorValue = (el("lsn-author")?.value || "").trim();
+
+  return {
+    dateFrom: el("lsn-date-from")?.value || "",
+    dateTo: el("lsn-date-to")?.value || "",
+    months: monthValue > 0 ? [monthValue] : [],
+    dayOfWeek: dowValue >= 0 ? [dowValue] : [],
+    dayOfMonth: domValue >= 1 && domValue <= 31 ? [domValue] : [],
+    authors: authorValue ? [authorValue] : [],
+    contentTypes: typeValue ? [typeValue] : [],
+  };
+}
+
+function renderResults(payload) {
+  const list = el("lsn-results-list");
+  const meta = document.querySelector(".lsn-results-meta");
+  if (!list || !meta) return;
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+  meta.textContent = `Found ${payload?.total || 0} posts`;
+  if (results.length === 0) {
+    list.innerHTML = "<p class='lsn-empty'>No matches.</p>";
+    return;
+  }
+
+  list.innerHTML = results
+    .map((post) => {
+      const author = escapeHtml(post.authorName || "Unknown author");
+      const text = escapeHtml((post.contentText || "").slice(0, 190));
+      const date = escapeHtml(post.postDate || post.dateLabel || "");
+      const type = escapeHtml(post.contentType || "unknown");
+      return `
+        <article class="lsn-result">
+          <div class="lsn-result-top">
+            <strong>${author}</strong>
+            <span>${type}</span>
+          </div>
+          <p>${text || "(No text extracted)"}</p>
+          <div class="lsn-result-bottom">
+            <small>${date}</small>
+            <button data-open-id="${post.id}" class="lsn-open">Open</button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+
+  list.querySelectorAll(".lsn-open").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const postId = btn.getAttribute("data-open-id");
+      if (!postId) return;
+      await sendMessage(MESSAGE_TYPES.OPEN_POST, { postId });
+    });
+  });
+}
+
+async function performSearch(page = 1) {
+  const queryText = el("lsn-q")?.value || "";
+  const filters = getFiltersFromUi();
+  const response = await sendMessage(MESSAGE_TYPES.SEARCH_QUERY, {
+    queryText,
+    filters,
+    page,
+    pageSize: 25,
+  });
+  if (response?.ok) {
+    renderResults(response.data);
+    return;
+  }
+  const list = el("lsn-results-list");
+  if (list) {
+    list.innerHTML = `<p class="lsn-empty">Search failed: ${escapeHtml(response?.error || "unknown error")}</p>`;
+  }
+}
+
+function clearFilters() {
+  const ids = ["lsn-q", "lsn-author", "lsn-date-from", "lsn-date-to", "lsn-month", "lsn-dow", "lsn-dom", "lsn-type"];
+  for (const id of ids) {
+    const node = el(id);
+    if (!node) continue;
+    node.value = "";
+  }
+  performSearch(1);
 }
 
 async function pollSyncStatus() {
