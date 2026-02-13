@@ -157,10 +157,30 @@ function stripProfileHeaderNoise(contentText) {
   const text = normalizeWhitespace(contentText || "");
   const cleaned = text
     .replace(/^.{2,80}?\s*View\s+.+?\s+profile\s*/i, "")
+    .replace(/^•\s*\d+(?:st|nd|rd|th)\s*•\s*\d+(?:st|nd|rd|th)\s*/i, "")
+    .replace(/^•\s*\d+(?:st|nd|rd|th)\s*/i, "")
+    .replace(/\bVisible to everyone\b/gi, " ")
     .replace(/\bLike\b|\bComment\b|\bRepost\b|\bSend\b|\bShare\b/gi, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
   return cleaned || text;
+}
+
+function extractAuthorFromProfileLinks(card) {
+  const links = Array.from(card.querySelectorAll("a[href*='/in/']"));
+  const candidates = links
+    .map((link) => normalizeWhitespace(link.textContent || ""))
+    .filter(Boolean)
+    .filter((text) => !/^(view|message|follow|connect)\b/i.test(text))
+    .filter((text) => text.length >= 3 && text.length <= 80)
+    .filter((text) => /^[\p{L}\p{M}\p{N} .,'\-]+$/u.test(text));
+
+  if (candidates.length === 0) {
+    return "";
+  }
+
+  candidates.sort((a, b) => b.length - a.length);
+  return candidates[0];
 }
 
 function extractPostLinkText(card) {
@@ -314,6 +334,7 @@ function extractVisibleBatch(seenIds) {
     const authorName = textFromSelectors(card, AUTHOR_SELECTORS);
     const dateLabel = textFromSelectors(card, DATE_SELECTORS);
     const rawText = extractBestContentText(card);
+    const linkAuthor = extractAuthorFromProfileLinks(card);
     const derivedAuthor = deriveAuthorFromContent(rawText);
     const contentText = stripProfileHeaderNoise(rawText);
     if (!postUrl) {
@@ -321,7 +342,7 @@ function extractVisibleBatch(seenIds) {
     }
     const normalized = normalizeSavedPost({
       postUrl,
-      authorName: authorName || derivedAuthor,
+      authorName: authorName || linkAuthor || derivedAuthor,
       dateLabel,
       contentText,
     });
