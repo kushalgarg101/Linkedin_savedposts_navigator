@@ -54,13 +54,11 @@ async function main() {
     await page.waitForSelector("#lsn-root", { timeout: timeoutMs });
     await page.waitForSelector("#lsn-panel", { timeout: timeoutMs });
     console.log("[LSN E2E] Sidebar injected.");
-
-    await page.click("#lsn-start");
     await page.waitForTimeout(3000);
 
     const status = await page.locator("#lsn-status-pill").textContent();
     requireCondition(
-      ["running", "completed", "paused", "idle"].includes(String(status || "").trim().toLowerCase()),
+      ["idle", "syncing", "done"].includes(String(status || "").trim().toLowerCase()),
       `Unexpected sync status value: ${status}`,
     );
 

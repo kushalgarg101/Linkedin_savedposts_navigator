@@ -21,3 +21,22 @@ test("normalizeSavedPost trims and classifies content", () => {
   assert.equal(post.contentType, "video");
   assert.ok(post.id.startsWith("lsn_"));
 });
+
+test("normalizeSavedPost supports relative dates and attachment metadata", () => {
+  const post = normalizeSavedPost({
+    postUrl: "https://linkedin.com/feed/update/3",
+    authorName: "John Doe",
+    contentText: "Read this document",
+    dateLabel: "3w",
+    contentType: "document",
+    attachmentUrl: " https://media.licdn.com/abc.pdf ",
+    attachmentTitle: "  Paper  ",
+    attachmentType: "document",
+  });
+
+  assert.equal(post.contentType, "document");
+  assert.equal(post.attachmentUrl, "https://media.licdn.com/abc.pdf");
+  assert.equal(post.attachmentTitle, "Paper");
+  assert.equal(post.attachmentType, "document");
+  assert.ok(typeof post.postDate === "string" && post.postDate.includes("T"));
+});

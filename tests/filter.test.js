@@ -48,6 +48,13 @@ test("postMatches treats dateTo as inclusive end-of-day", () => {
   assert.equal(postMatches(timed, "", { dateTo: "2025-09-07" }), false);
 });
 
+test("postMatches handles Sunday (DOW 0) filter correctly", () => {
+  // 2025-09-07 is a Sunday (getUTCDay() === 0)
+  const sundayPost = { ...sample, postDate: "2025-09-07T12:00:00.000Z" };
+  assert.equal(postMatches(sundayPost, "", { dayOfWeek: [0] }), true);
+  assert.equal(postMatches(sundayPost, "", { dayOfWeek: [1] }), false);
+});
+
 test("sortRecentFirst orders by most recent date", () => {
   const older = { ...sample, id: "old", postDate: "2024-01-01T00:00:00.000Z" };
   const newer = { ...sample, id: "new", postDate: "2025-12-01T00:00:00.000Z" };
