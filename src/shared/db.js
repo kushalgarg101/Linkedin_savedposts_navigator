@@ -1,7 +1,7 @@
 import { postMatches } from "./filter.js";
 
 const DB_NAME = "linkedin_saved_navigator";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORES = Object.freeze({
   POSTS: "saved_posts",
@@ -10,6 +10,15 @@ const STORES = Object.freeze({
 
 const MAX_PAGE_SIZE = 200;
 const MAX_ALL_MATCHES_PAGE_SIZE = 500;
+let authorCountsCache = null;
+let authorCountsCacheDirty = true;
+const REQUIRED_POST_INDEXES = Object.freeze([
+  ["authorName", "authorName"],
+  ["postUrl", "postUrl"],
+  ["postDate", "postDate"],
+  ["contentType", "contentType"],
+  ["indexedAt", "indexedAt"],
+]);
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -19,10 +28,10 @@ function openDb() {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORES.POSTS)) {
         const posts = db.createObjectStore(STORES.POSTS, { keyPath: "id" });
-        posts.createIndex("authorName", "authorName", { unique: false });
-        posts.createIndex("postDate", "postDate", { unique: false });
-        posts.createIndex("contentType", "contentType", { unique: false });
-        posts.createIndex("indexedAt", "indexedAt", { unique: false });
+        ensureRequiredPostIndexes(posts);
+      } else if (request.transaction) {
+        const posts = request.transaction.objectStore(STORES.POSTS);
+        ensureRequiredPostIndexes(posts);
       }
       if (!db.objectStoreNames.contains(STORES.SYNC)) {
         db.createObjectStore(STORES.SYNC, { keyPath: "key" });
@@ -74,9 +83,14 @@ export async function upsertPosts(items) {
   const db = await getDb();
   const tx = db.transaction(STORES.POSTS, "readwrite");
   const store = tx.objectStore(STORES.POSTS);
+  const postUrlIndex = store.indexNames.contains("postUrl") ? store.index("postUrl") : null;
+  const normalizedItems = dedupeBatchByPostUrl(items);
 
-  for (const item of items) {
+  for (const item of normalizedItems) {
     if (!item?.id) continue;
+    if (postUrlIndex && item.postUrl) {
+      await deleteOtherRowsForPostUrl(postUrlIndex, item.postUrl, item.id);
+    }
     store.put(item);
   }
 
@@ -85,9 +99,10 @@ export async function upsertPosts(items) {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
+  authorCountsCacheDirty = true;
 
   const total = await countPosts();
-  return { total, batchSize: items.length };
+  return { total, batchSize: normalizedItems.length };
 }
 
 export async function clearPosts() {
@@ -100,6 +115,7 @@ export async function clearPosts() {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
+  authorCountsCacheDirty = true;
 }
 
 export async function countPosts() {
@@ -112,6 +128,37 @@ export async function getPostById(id) {
   const db = await getDb();
   const store = getStore(db, STORES.POSTS);
   return requestToPromise(store.get(id));
+}
+
+export async function listAuthorSuggestions({ query = "", limit = 20 } = {}) {
+  const q = String(query || "").trim().toLowerCase();
+  const max = Math.min(100, Math.max(1, Number(limit) || 20));
+  if (authorCountsCacheDirty || !authorCountsCache) {
+    const db = await getDb();
+    const tx = db.transaction(STORES.POSTS, "readonly");
+    const store = tx.objectStore(STORES.POSTS);
+    const source = store.indexNames.contains("authorName") ? store.index("authorName") : store;
+    const buckets = new Map();
+
+    await iterateCursor(source, null, "next", (post) => {
+      const author = String(post?.authorName || "").trim();
+      if (!author) return;
+      const key = author.toLowerCase();
+      const existing = buckets.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        buckets.set(key, { name: author, count: 1 });
+      }
+    });
+    authorCountsCache = Array.from(buckets.values());
+    authorCountsCacheDirty = false;
+  }
+
+  return (authorCountsCache || [])
+    .filter((row) => !q || row.name.toLowerCase().includes(q))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, max);
 }
 
 export async function searchPosts({
@@ -161,63 +208,6 @@ export async function searchPosts({
   };
 }
 
-export async function getHealthStats({ sampleSize = 5 } = {}) {
-  const db = await getDb();
-  const tx = db.transaction(STORES.POSTS, "readonly");
-  const store = tx.objectStore(STORES.POSTS);
-  const source = store.index("indexedAt");
-
-  let total = 0;
-  let withAuthor = 0;
-  let withText = 0;
-  let withDate = 0;
-  const byType = {
-    article: 0,
-    video: 0,
-    document: 0,
-    image: 0,
-    unknown: 0,
-  };
-  const samples = [];
-
-  await iterateCursor(source, null, "prev", (post) => {
-    total += 1;
-    const author = String(post?.authorName || "").trim();
-    const text = String(post?.contentText || "").trim();
-    const date = String(post?.postDate || "").trim();
-    const type = String(post?.contentType || "unknown").toLowerCase();
-
-    if (author) withAuthor += 1;
-    if (text) withText += 1;
-    if (date) withDate += 1;
-    if (Object.prototype.hasOwnProperty.call(byType, type)) {
-      byType[type] += 1;
-    } else {
-      byType.unknown += 1;
-    }
-
-    if (samples.length < Math.max(1, Math.floor(sampleSize))) {
-      samples.push({
-        id: post?.id || "",
-        authorName: author,
-        contentType: type,
-        hasText: Boolean(text),
-        hasDate: Boolean(date),
-        textSnippet: text.slice(0, 120),
-      });
-    }
-  });
-
-  return {
-    total,
-    withAuthor,
-    withText,
-    withDate,
-    byType,
-    samples,
-  };
-}
-
 function normalizeIsoDateOnly(value) {
   if (!value) return "";
   const parsed = Date.parse(value);
@@ -247,14 +237,20 @@ function buildDateCursorRange(filters) {
 
 function buildCursorConfig(store, filters) {
   const hasDateFilter = Boolean(filters?.dateFrom) || Boolean(filters?.dateTo);
-  if (hasDateFilter) {
+  if (hasDateFilter && store.indexNames.contains("postDate")) {
     return {
       source: store.index("postDate"),
       keyRange: buildDateCursorRange(filters),
     };
   }
+  if (store.indexNames.contains("indexedAt")) {
+    return {
+      source: store.index("indexedAt"),
+      keyRange: null,
+    };
+  }
   return {
-    source: store.index("indexedAt"),
+    source: store,
     keyRange: null,
   };
 }
@@ -277,4 +273,50 @@ function iterateCursor(source, keyRange, direction, onValue) {
       }
     };
   });
+}
+
+function dedupeBatchByPostUrl(items) {
+  const out = [];
+  const seenPostUrls = new Set();
+  const seenIds = new Set();
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item?.id) continue;
+    const postUrl = String(item.postUrl || "").trim();
+    if (postUrl) {
+      if (seenPostUrls.has(postUrl)) continue;
+      seenPostUrls.add(postUrl);
+    } else if (seenIds.has(item.id)) {
+      continue;
+    }
+    seenIds.add(item.id);
+    out.push(item);
+  }
+  return out;
+}
+
+function deleteOtherRowsForPostUrl(index, postUrl, keepId) {
+  return new Promise((resolve, reject) => {
+    const range = IDBKeyRange.only(postUrl);
+    const request = index.openCursor(range, "next");
+    request.onerror = () => reject(request.error);
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (!cursor) {
+        resolve();
+        return;
+      }
+      if (cursor.primaryKey !== keepId) {
+        cursor.delete();
+      }
+      cursor.continue();
+    };
+  });
+}
+
+function ensureRequiredPostIndexes(postsStore) {
+  for (const [name, keyPath] of REQUIRED_POST_INDEXES) {
+    if (!postsStore.indexNames.contains(name)) {
+      postsStore.createIndex(name, keyPath, { unique: false });
+    }
+  }
 }

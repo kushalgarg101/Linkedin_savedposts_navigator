@@ -12,7 +12,7 @@ function normalizeWhitespace(value) {
 }
 
 function classifyContentType(text) {
-  const t = text.toLowerCase();
+  const t = String(text || "").toLowerCase();
   if (t.includes("video")) return "video";
   if (t.includes("document")) return "document";
   if (t.includes("article")) return "article";
@@ -20,15 +20,42 @@ function classifyContentType(text) {
   return "unknown";
 }
 
+function addMonths(date, months) {
+  const d = new Date(date.getTime());
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
+function parseRelativeDateLoose(value) {
+  const raw = normalizeWhitespace(value || "").toLowerCase();
+  if (!raw) return null;
+  const match = raw.match(/\b(\d+)\s*(m|mo|w|d|h|hr|y|yr)\b/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const now = new Date();
+
+  if (unit === "m") return new Date(now.getTime() - amount * 60 * 1000).toISOString();
+  if (unit === "h" || unit === "hr") return new Date(now.getTime() - amount * 60 * 60 * 1000).toISOString();
+  if (unit === "d") return new Date(now.getTime() - amount * 24 * 60 * 60 * 1000).toISOString();
+  if (unit === "w") return new Date(now.getTime() - amount * 7 * 24 * 60 * 60 * 1000).toISOString();
+  if (unit === "mo") return addMonths(now, -amount).toISOString();
+  if (unit === "y" || unit === "yr") return addMonths(now, -amount * 12).toISOString();
+  return null;
+}
+
 function parseDateLoose(value) {
   if (!value) return null;
+  const relative = parseRelativeDateLoose(value);
+  if (relative) return relative;
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return null;
   return new Date(parsed).toISOString();
 }
 
 export function buildPostId(postUrl, authorName, textSnippet, postDate) {
-  const base = [postUrl || "", authorName || "", textSnippet || "", postDate || ""].join("|");
+  const base = postUrl || [authorName || "", textSnippet || "", postDate || ""].join("|");
   return `lsn_${hashString(base)}`;
 }
 
@@ -38,7 +65,11 @@ export function normalizeSavedPost(raw) {
   const contentText = normalizeWhitespace(raw?.contentText || "");
   const dateLabel = normalizeWhitespace(raw?.dateLabel || "");
   const postDate = parseDateLoose(raw?.postDate || dateLabel);
-  const contentType = classifyContentType(contentText);
+  const contentType = normalizeWhitespace(raw?.contentType || "") || classifyContentType(contentText);
+  const attachmentUrl = normalizeWhitespace(raw?.attachmentUrl || "");
+  const attachmentTitle = normalizeWhitespace(raw?.attachmentTitle || "");
+  const attachmentType = normalizeWhitespace(raw?.attachmentType || "");
+  const attachmentPreviewUrl = normalizeWhitespace(raw?.attachmentPreviewUrl || "");
   const id = buildPostId(postUrl, authorName, contentText.slice(0, 120), postDate || dateLabel);
 
   return {
@@ -49,6 +80,10 @@ export function normalizeSavedPost(raw) {
     contentType,
     dateLabel,
     postDate,
+    attachmentUrl,
+    attachmentTitle,
+    attachmentType,
+    attachmentPreviewUrl,
     savedAt: null,
     indexedAt: new Date().toISOString(),
     rawMeta: {
