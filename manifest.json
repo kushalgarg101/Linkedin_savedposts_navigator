@@ -3,11 +3,20 @@
   "name": "LinkedIn Saved Navigator",
   "version": "0.1.0",
   "description": "Search and filter LinkedIn saved posts from an in-page sidebar.",
-  "permissions": ["storage", "tabs"],
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting"
+  ],
   "host_permissions": [
+    "https://linkedin.com/my-items/saved-posts",
+    "https://linkedin.com/my-items/saved-posts/*",
+    "https://linkedin.com/my-items/saved-posts/",
+    "https://linkedin.com/*",
     "https://www.linkedin.com/my-items/saved-posts",
     "https://www.linkedin.com/my-items/saved-posts/*",
-    "https://www.linkedin.com/my-items/saved-posts/"
+    "https://www.linkedin.com/my-items/saved-posts/",
+    "https://www.linkedin.com/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.js",
@@ -16,16 +25,44 @@
   "content_scripts": [
     {
       "matches": [
+        "https://linkedin.com/my-items/saved-posts",
+        "https://linkedin.com/my-items/saved-posts/*",
+        "https://linkedin.com/my-items/saved-posts/",
         "https://www.linkedin.com/my-items/saved-posts",
         "https://www.linkedin.com/my-items/saved-posts/*",
         "https://www.linkedin.com/my-items/saved-posts/"
       ],
-      "js": ["src/content/linkedin-saved.js"],
-      "css": ["src/sidebar/sidebar.css"],
+      "js": [
+        "src/content/linkedin-saved.js"
+      ],
+      "css": [
+        "src/sidebar/sidebar.css"
+      ],
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/content/page-network-probe.js"
+      ],
+      "matches": [
+        "https://linkedin.com/*",
+        "https://www.linkedin.com/*"
+      ]
+    }
+  ],
   "action": {
-    "default_title": "LinkedIn Saved Navigator"
+    "default_title": "LinkedIn Saved Navigator",
+    "default_icon": {
+      "16": "assets/icons/icon.svg",
+      "48": "assets/icons/icon.svg",
+      "128": "assets/icons/icon.svg"
+    }
+  },
+  "icons": {
+    "16": "assets/icons/icon.svg",
+    "48": "assets/icons/icon.svg",
+    "128": "assets/icons/icon.svg"
   }
 }
