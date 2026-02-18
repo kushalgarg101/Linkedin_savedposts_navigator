@@ -1,11 +1,9 @@
 /* ── LinkedIn Saved Navigator — Modern UI with Abstract Art Background ── */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 #lsn-root,
 #lsn-root * {
   box-sizing: border-box;
-  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
 }
 
 #lsn-root {

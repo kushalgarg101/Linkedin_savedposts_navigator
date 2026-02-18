@@ -3,6 +3,10 @@ if (window.__LSN_LOADED__) {
 } else {
   window.__LSN_LOADED__ = true;
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CONSTANTS & CONFIGURATION
+  // ═══════════════════════════════════════════════════════════════════════════════
+
   const MESSAGE_TYPES = Object.freeze({
     SYNC_STATUS: "SYNC_STATUS",
     SYNC_PROGRESS: "SYNC_PROGRESS",
@@ -127,9 +131,13 @@ const searchSuggestionsState = {
   highlight: -1,
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// DEBUG & LOGGING UTILITIES
+// ═══════════════════════════════════════════════════════════════════════════════
+
 function isSyncDebugEnabled() {
-    return true; // Force enabled for verification phase
-  }
+  return false;
+}
 
   function toDebugNodeSummary(node) {
     if (!(node instanceof HTMLElement)) return "";
@@ -147,10 +155,8 @@ function isSyncDebugEnabled() {
   }
 
   function debugSync(event, payload = {}) {
-    // Always log to console for debugging
-    console.log(`[LSN Debug] ${event}:`, payload);
-
     if (!isSyncDebugEnabled()) return;
+    logDebug(`Debug] ${event}:`, payload);
     try {
       const bucket = Array.isArray(window.__LSN_DEBUG_EVENTS__) ? window.__LSN_DEBUG_EVENTS__ : [];
       bucket.push({
@@ -249,15 +255,15 @@ function isSyncDebugEnabled() {
           event: String(event),
           payload: payload ?? {}
         });
-        // Also log to console for immediate visibility
-        console.log(`[LSN] ${event}:`, payload);
       };
 
-      console.log("[LSN] Debug helpers installed successfully");
-      console.log("[LSN] Available functions:");
-      console.log("  - window.__LSN_GET_DEBUG_SYNC__()");
-      console.log("  - window.__LSN_CLEAR_DEBUG_SYNC__()");
-      console.log("  - window.__LSN_LOG__(event, payload)");
+      if (isSyncDebugEnabled()) {
+        console.log("[LSN] Debug helpers installed successfully");
+        console.log("[LSN] Available functions:");
+        console.log("  - window.__LSN_GET_DEBUG_SYNC__()");
+        console.log("  - window.__LSN_CLEAR_DEBUG_SYNC__()");
+        console.log("  - window.__LSN_LOG__(event, payload)");
+      }
     } catch {
       // non-fatal
     }
@@ -308,6 +314,11 @@ function isSyncDebugEnabled() {
     console.error(`[LSN] ${context}: ${detail}`);
   }
 
+  function logDebug(...args) {
+    if (!isSyncDebugEnabled()) return;
+    console.log("[LSN]", ...args);
+  }
+
   function isRuntimeInvalidationError(error) {
     const message = String(error?.message || error || "").toLowerCase();
     return message.includes("extension context invalidated");
@@ -340,6 +351,11 @@ function isSyncDebugEnabled() {
     }
     syncInProgress = false;
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // UTILITY FUNCTIONS
+  // NOTE: Some functions duplicated in src/shared/normalize.js for service worker use
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   function hashString(input) {
     let h = 2166136261;
@@ -534,19 +550,6 @@ function isSyncDebugEnabled() {
     return words.every((word) => /^[\p{L}\p{M}][\p{L}\p{M}.'-]*$/u.test(word));
   }
 
-  function scoreAuthorCandidate(text) {
-    const candidate = normalizeWhitespace(text || "");
-    if (isInvalidAuthorText(candidate)) return -1;
-    if (!looksLikePersonName(candidate)) return -1;
-    const words = candidate.split(/\s+/).filter(Boolean);
-    let score = 0;
-    if (words.length >= 2 && words.length <= 5) score += 3;
-    if (/^[\p{L}\p{M}][\p{L}\p{M}.'-]*(?:\s+[\p{L}\p{M}][\p{L}\p{M}.'-]*)+$/u.test(candidate)) score += 3;
-    if (/[A-Z\p{Lu}]/u.test(candidate)) score += 1;
-    if (/\d/.test(candidate)) score -= 2;
-    return score;
-  }
-
   function pickBestAuthor(candidates) {
     for (const c of candidates) {
       let val = normalizeWhitespace(c);
@@ -592,6 +595,10 @@ function isSyncDebugEnabled() {
       return "";
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // DOM EXTRACTION FUNCTIONS
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   function extractAuthorFromProfileLinks(card) {
     // LinkedIn randomization often puts the name inside an <a> with /in/
@@ -869,7 +876,6 @@ function isSyncDebugEnabled() {
         continue;
       }
 
-      const attachmentSizeFallback = attachmentSize(card);
       const attachment = extractAttachmentFromCard(card, postUrl, contentText, contentType);
       const mergedType =
         attachment.attachmentType &&
@@ -1754,8 +1760,34 @@ function isSyncDebugEnabled() {
     };
   }
 
-  // Cache for profile fetches to avoid duplicate requests
-  const profileCache = new Map();
+  // Simple LRU Cache implementation
+  class LRUCache {
+    constructor(maxSize = 100) {
+      this.maxSize = maxSize;
+      this.cache = new Map();
+    }
+    get(key) {
+      if (!this.cache.has(key)) return undefined;
+      const value = this.cache.get(key);
+      this.cache.delete(key);
+      this.cache.set(key, value);
+      return value;
+    }
+    set(key, value) {
+      if (this.cache.has(key)) this.cache.delete(key);
+      else if (this.cache.size >= this.maxSize) {
+        const firstKey = this.cache.keys().next().value;
+        this.cache.delete(firstKey);
+      }
+      this.cache.set(key, value);
+    }
+    has(key) {
+      return this.cache.has(key);
+    }
+  }
+
+  // Cache for profile fetches to avoid duplicate requests (bounded LRU cache)
+  const profileCache = new LRUCache(100);
 
   async function fetchProfileByMiniProfileUrn(miniProfileUrn, csrfToken) {
     if (!miniProfileUrn) return null;
@@ -1763,7 +1795,7 @@ function isSyncDebugEnabled() {
       return profileCache.get(miniProfileUrn);
     }
 
-    console.log("[LSN PROFILE] Fetching profile:", miniProfileUrn);
+    logDebug("PROFILE] Fetching profile:", miniProfileUrn);
 
     const profileId = miniProfileUrn.split(':').pop();
 
@@ -1785,12 +1817,12 @@ function isSyncDebugEnabled() {
         });
 
         if (!response.ok) {
-          console.log("[LSN PROFILE] Endpoint failed:", profileUrl.split('?')[0], response.status);
+          logDebug("PROFILE] Endpoint failed:", profileUrl.split('?')[0], response.status);
           continue;
         }
 
         const data = await response.json();
-        console.log("[LSN PROFILE] Response from", profileUrl.split('?')[0].split('/').slice(-2).join('/'));
+        logDebug("PROFILE] Response from", profileUrl.split('?')[0].split('/').slice(-2).join('/'));
 
         // Try to extract name from various response formats
         let firstName = '';
@@ -1829,12 +1861,12 @@ function isSyncDebugEnabled() {
             lastName,
             name: `${firstName} ${lastName}`.trim()
           };
-          console.log("[LSN PROFILE] Extracted name:", result.name);
+          logDebug("PROFILE] Extracted name:", result.name);
           profileCache.set(miniProfileUrn, result);
           return result;
         }
       } catch (error) {
-        console.log("[LSN PROFILE] Error:", error.message);
+        logDebug("PROFILE] Error:", error.message);
       }
     }
 
@@ -1842,7 +1874,7 @@ function isSyncDebugEnabled() {
     if (profileId) {
       try {
         const profilePageUrl = `https://www.linkedin.com/in/${profileId}/`;
-        console.log("[LSN PROFILE] Trying profile page:", profilePageUrl);
+        logDebug("PROFILE] Trying profile page:", profilePageUrl);
 
         const response = await fetch(profilePageUrl, {
           method: "GET",
@@ -1857,14 +1889,14 @@ function isSyncDebugEnabled() {
             const name = titleMatch[1].trim().replace(/\s*\|.*/, '').trim();
             if (name && name.length > 2 && name.length < 60) {
               const result = { firstName: name.split(' ')[0], lastName: name.split(' ').slice(1).join(' '), name };
-              console.log("[LSN PROFILE] Extracted from HTML:", name);
+              logDebug("PROFILE] Extracted from HTML:", name);
               profileCache.set(miniProfileUrn, result);
               return result;
             }
           }
         }
       } catch (error) {
-        console.log("[LSN PROFILE] HTML fetch error:", error.message);
+        logDebug("PROFILE] HTML fetch error:", error.message);
       }
     }
 
@@ -2013,9 +2045,9 @@ function isSyncDebugEnabled() {
 
     // Log hints for debugging
     if (hints.length > 0) {
-      console.log(`[LSN PAGINATION] Page ${pagesFetched}: Found ${hints.length} paging hints, nextStart: ${nextStart}`);
+      logDebug(`PAGINATION] Page ${pagesFetched}: Found ${hints.length} paging hints, nextStart: ${nextStart}`);
       hints.slice(0, 3).forEach((h, i) => {
-        console.log(`[LSN PAGINATION] Hint ${i}: start=${h.start}, count=${h.count}, total=${h.total}`);
+        logDebug(`PAGINATION] Hint ${i}: start=${h.start}, count=${h.count}, total=${h.total}`);
       });
     }
 
@@ -2026,7 +2058,7 @@ function isSyncDebugEnabled() {
         if (nextStart >= hint.total) {
           // Only trust total if we've fetched many pages
           if (pagesFetched >= minimumPagesBeforeEndSignal) {
-            console.log(`[LSN PAGINATION] Explicit end triggered: nextStart(${nextStart}) >= total(${hint.total}), pagesFetched: ${pagesFetched}`);
+            logDebug(`PAGINATION] Explicit end triggered: nextStart(${nextStart}) >= total(${hint.total}), pagesFetched: ${pagesFetched}`);
             return true;
           }
         }
@@ -2037,7 +2069,7 @@ function isSyncDebugEnabled() {
     if (pagesFetched >= minimumPagesBeforeEndSignal) {
       const hasEnd = hasBooleanEndFlag(responseJson);
       if (hasEnd) {
-        console.log(`[LSN PAGINATION] Boolean end flag found at page ${pagesFetched}`);
+        logDebug(`PAGINATION] Boolean end flag found at page ${pagesFetched}`);
       }
       return hasEnd;
     }
@@ -2173,15 +2205,15 @@ function isSyncDebugEnabled() {
     // Try to extract a fresh pagination token from response
     let token = extractPaginationToken(responseJson);
 
-    console.log("[LSN PAGINATION] Current start:", currentStart, "Next start:", nextStart);
-    console.log("[LSN PAGINATION] Token found?:", !!token);
-    console.log("[LSN PAGINATION] Items count:", currentItemsCount);
+    logDebug("PAGINATION] Current start:", currentStart, "Next start:", nextStart);
+    logDebug("PAGINATION] Token found?:", !!token);
+    logDebug("PAGINATION] Items count:", currentItemsCount);
 
     // DEBUG: Log response structure to find pagination info
     if (responseJson && typeof responseJson === 'object') {
-      console.log("[LSN PAGINATION] Response keys:", Object.keys(responseJson));
+      logDebug("PAGINATION] Response keys:", Object.keys(responseJson));
       if (responseJson.data) {
-        console.log("[LSN PAGINATION] Response data keys:", Object.keys(responseJson.data));
+        logDebug("PAGINATION] Response data keys:", Object.keys(responseJson.data));
         // Look for paging info in various locations
         const searchForPaging = (obj, path = '') => {
           for (const key of Object.keys(obj)) {
@@ -2189,7 +2221,7 @@ function isSyncDebugEnabled() {
             const currentPath = path ? `${path}.${key}` : key;
             if (val && typeof val === 'object') {
               if (val.paging || val.pageInfo || val.metadata || val.totalResultCount !== undefined) {
-                console.log(`[LSN PAGINATION] Found paging info at data.${currentPath}:`, {
+                logDebug(`PAGINATION] Found paging info at data.${currentPath}:`, {
                   paging: val.paging,
                   pageInfo: val.pageInfo,
                   metadata: val.metadata,
@@ -2198,7 +2230,7 @@ function isSyncDebugEnabled() {
                 // Extract paginationToken if present
                 if (val.paging?.paginationToken || val.metadata?.paginationToken) {
                   const foundToken = val.paging?.paginationToken || val.metadata?.paginationToken;
-                  console.log(`[LSN PAGINATION] Found paginationToken:`, foundToken);
+                  logDebug(`PAGINATION] Found paginationToken:`, foundToken);
                   if (!token) token = foundToken;
                 }
               }
@@ -2302,19 +2334,23 @@ function isSyncDebugEnabled() {
     return results;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // API EXTRACTION FUNCTIONS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
   async function extractApiItems(payload, csrfToken = "") {
     // Handle Voyager Dash GraphQL format - check for "included" array first
     // Ensure payload is a valid object first
     if (!payload || typeof payload !== 'object') {
-      console.log("[LSN EXTRACT] Invalid payload:", typeof payload);
+      logDebug("EXTRACT] Invalid payload:", typeof payload);
       return [];
     }
 
     // DEBUG: Log the actual payload structure
-    console.log("[LSN EXTRACT] Payload keys:", Object.keys(payload));
-    console.log("[LSN EXTRACT] Has data?:", 'data' in payload);
-    console.log("[LSN EXTRACT] Has included?:", 'included' in payload);
-    console.log("[LSN EXTRACT] Has elements?:", 'elements' in payload);
+    logDebug("EXTRACT] Payload keys:", Object.keys(payload));
+    logDebug("EXTRACT] Has data?:", 'data' in payload);
+    logDebug("EXTRACT] Has included?:", 'included' in payload);
+    logDebug("EXTRACT] Has elements?:", 'elements' in payload);
 
     // Ensure we always have arrays to spread - be extra defensive
     let includedArray = [];
@@ -2325,10 +2361,10 @@ function isSyncDebugEnabled() {
         // Try different paths to find the data
         if (Array.isArray(payload?.data?.included)) {
           includedArray = payload.data.included;
-          console.log("[LSN EXTRACT] Found included in payload.data.included:", includedArray.length);
+          logDebug("EXTRACT] Found included in payload.data.included:", includedArray.length);
         } else if (Array.isArray(payload?.included)) {
           includedArray = payload.included;
-          console.log("[LSN EXTRACT] Found included in payload.included:", includedArray.length);
+          logDebug("EXTRACT] Found included in payload.included:", includedArray.length);
         }
 
         // Try multiple paths for main data
@@ -2349,7 +2385,7 @@ function isSyncDebugEnabled() {
             val = val?.[part];
           }
           if (Array.isArray(val)) {
-            console.log(`[LSN EXTRACT] Found array at ${path}:`, val.length);
+            logDebug(`EXTRACT] Found array at ${path}:`, val.length);
             allData = val;
             break;
           }
@@ -2362,7 +2398,7 @@ function isSyncDebugEnabled() {
               const val = obj[key];
               const currentPath = path ? `${path}.${key}` : key;
               if (Array.isArray(val) && val.length > 0) {
-                console.log(`[LSN EXTRACT] Found array at data.${currentPath}:`, val.length);
+                logDebug(`EXTRACT] Found array at data.${currentPath}:`, val.length);
                 return val;
               } else if (val && typeof val === 'object' && !Array.isArray(val)) {
                 const result = findArrays(val, currentPath);
@@ -2376,7 +2412,7 @@ function isSyncDebugEnabled() {
         }
       }
     } catch (e) {
-      console.log("[LSN EXTRACT] Error extracting arrays:", e);
+      logDebug("EXTRACT] Error extracting arrays:", e);
       return [];
     }
 
@@ -2385,7 +2421,7 @@ function isSyncDebugEnabled() {
     const safeIncludedArray = Array.isArray(includedArray) ? includedArray : [];
     const combinedObjects = [...safeAllData, ...safeIncludedArray];
 
-    console.log("[LSN EXTRACT] Combined objects count:", combinedObjects.length);
+    logDebug("EXTRACT] Combined objects count:", combinedObjects.length);
 
     // Collect all objects from the entire response
     const objects = [];
@@ -2394,15 +2430,15 @@ function isSyncDebugEnabled() {
       collectObjectsDeep(payload, objects);
     }
 
-    console.log("[LSN EXTRACT] Total objects after deep collection:", objects.length);
+    logDebug("EXTRACT] Total objects after deep collection:", objects.length);
 
     if (objects.length > 0) {
       // Log first object to see structure
       const sample = objects[0];
-      console.log("[LSN EXTRACT] Sample object keys:", Object.keys(sample));
-      console.log("[LSN EXTRACT] Sample has actor?:", 'actor' in sample);
-      console.log("[LSN EXTRACT] Sample has entityUrn?:", 'entityUrn' in sample);
-      console.log("[LSN EXTRACT] Sample has miniProfileUrn?:", 'miniProfileUrn' in sample);
+      logDebug("EXTRACT] Sample object keys:", Object.keys(sample));
+      logDebug("EXTRACT] Sample has actor?:", 'actor' in sample);
+      logDebug("EXTRACT] Sample has entityUrn?:", 'entityUrn' in sample);
+      logDebug("EXTRACT] Sample has miniProfileUrn?:", 'miniProfileUrn' in sample);
     }
 
     // Build a lookup map for normalized entities (authors, etc.)
@@ -2485,7 +2521,7 @@ function isSyncDebugEnabled() {
     }
 
     // Log map sizes and sample profile IDs for debugging
-    console.log("[LSN EXTRACT] Maps built:", {
+    logDebug("EXTRACT] Maps built:", {
       urnMapSize: urnMap.size,
       miniProfileMapSize: miniProfileMap.size,
       entityUrnMapSize: entityUrnMap.size,
@@ -2509,8 +2545,8 @@ function isSyncDebugEnabled() {
     // Log sample object keys to understand structure
     if (objects.length > 0) {
       const sampleObj = objects[0];
-      console.log("[LSN EXTRACT] First object keys:", Object.keys(sampleObj || {}));
-      console.log("[LSN EXTRACT] First object sample:", JSON.stringify(sampleObj).substring(0, 200));
+      logDebug("EXTRACT] First object keys:", Object.keys(sampleObj || {}));
+      logDebug("EXTRACT] First object sample:", JSON.stringify(sampleObj).substring(0, 200));
 
       // Look for objects with LinkedIn URLs
       let objectsWithUrls = 0;
@@ -2524,9 +2560,9 @@ function isSyncDebugEnabled() {
           if (!sampleUrlObj) sampleUrlObj = obj;
         }
       }
-      console.log("[LSN EXTRACT] Objects with LinkedIn URLs (first 100):", objectsWithUrls);
+      logDebug("EXTRACT] Objects with LinkedIn URLs (first 100):", objectsWithUrls);
       if (sampleUrlObj) {
-        console.log("[LSN EXTRACT] Sample URL object keys:", Object.keys(sampleUrlObj));
+        logDebug("EXTRACT] Sample URL object keys:", Object.keys(sampleUrlObj));
       }
 
       debugSync("extract-api-sample-obj", {
@@ -2548,7 +2584,7 @@ function isSyncDebugEnabled() {
         }
       }
     }
-    console.log("[LSN EXTRACT] EntityResultViewModel map size:", entityResultMap.size);
+    logDebug("EXTRACT] EntityResultViewModel map size:", entityResultMap.size);
 
     for (const obj of objects) {
       // We only care about objects that look like Updates or Search Results
@@ -2559,7 +2595,7 @@ function isSyncDebugEnabled() {
       if (resultsByUrl.size < 3) {
         const allLinkedInUrls = strings.filter(s => /linkedin\.com/.test(s));
         if (allLinkedInUrls.length > 0) {
-          console.log("[LSN EXTRACT] Object", resultsByUrl.size, "LinkedIn URLs:", allLinkedInUrls.slice(0, 3));
+          logDebug("EXTRACT] Object", resultsByUrl.size, "LinkedIn URLs:", allLinkedInUrls.slice(0, 3));
         }
       }
 
@@ -2752,13 +2788,13 @@ function isSyncDebugEnabled() {
         const miniProfileMatch = postUrl.match(/miniProfileUrn=([^&]+)/);
         if (miniProfileMatch?.[1]) {
           const decodedUrn = decodeURIComponent(miniProfileMatch[1]);
-          console.log("[LSN EXTRACT] Looking for profile with URN:", decodedUrn);
+          logDebug("EXTRACT] Looking for profile with URN:", decodedUrn);
 
           // Try to find in our maps
           // First try miniProfileMap
           if (miniProfileMap.has(decodedUrn)) {
             const profile = miniProfileMap.get(decodedUrn);
-            console.log("[LSN EXTRACT] Found in miniProfileMap:", Object.keys(profile));
+            logDebug("EXTRACT] Found in miniProfileMap:", Object.keys(profile));
             if (profile.firstName && profile.lastName) {
               possibleAuthor = `${profile.firstName} ${profile.lastName}`;
               authorDebug.foundVia = "miniProfileMap-lookup";
@@ -2771,7 +2807,7 @@ function isSyncDebugEnabled() {
           // Try urnMap
           if (!possibleAuthor && urnMap.has(decodedUrn)) {
             const profile = urnMap.get(decodedUrn);
-            console.log("[LSN EXTRACT] Found in urnMap:", Object.keys(profile));
+            logDebug("EXTRACT] Found in urnMap:", Object.keys(profile));
             if (profile.firstName && profile.lastName) {
               possibleAuthor = `${profile.firstName} ${profile.lastName}`;
               authorDebug.foundVia = "urnMap-lookup";
@@ -2787,7 +2823,7 @@ function isSyncDebugEnabled() {
 
           if (!possibleAuthor && shortId && profileIdMap.has(shortId)) {
             const profile = profileIdMap.get(shortId);
-            console.log("[LSN EXTRACT] Found in profileIdMap:", Object.keys(profile));
+            logDebug("EXTRACT] Found in profileIdMap:", Object.keys(profile));
             if (profile.firstName && profile.lastName) {
               possibleAuthor = `${profile.firstName} ${profile.lastName}`;
               authorDebug.foundVia = "profileIdMap-lookup";
@@ -2799,14 +2835,14 @@ function isSyncDebugEnabled() {
 
           // Last resort: search through all objects
           if (!possibleAuthor) {
-            console.log("[LSN EXTRACT] Searching all objects for URN:", decodedUrn);
+            logDebug("EXTRACT] Searching all objects for URN:", decodedUrn);
             let foundCount = 0;
             for (const profileObj of objects) {
               // Check if this object has the matching URN
               const objUrn = profileObj?.entityUrn || profileObj?.urn || profileObj?.miniProfileUrn || "";
               if (objUrn === decodedUrn) {
                 foundCount++;
-                console.log("[LSN EXTRACT] Found matching profile object via loop:", Object.keys(profileObj));
+                logDebug("EXTRACT] Found matching profile object via loop:", Object.keys(profileObj));
                 if (profileObj.firstName && profileObj.lastName) {
                   possibleAuthor = `${profileObj.firstName} ${profileObj.lastName}`;
                   authorDebug.foundVia = "profile-loop-lookup";
@@ -2819,7 +2855,7 @@ function isSyncDebugEnabled() {
               }
             }
             if (foundCount === 0) {
-              console.log("[LSN EXTRACT] No profile found for URN:", decodedUrn);
+              logDebug("EXTRACT] No profile found for URN:", decodedUrn);
             }
           }
         }
@@ -3071,21 +3107,21 @@ function isSyncDebugEnabled() {
     // Fetch profiles for posts with unknown authors
     if (csrfToken) {
       const unknownAuthorPosts = results.filter(r => !r.authorName || r.authorName === "Unknown" || r.authorName === "Unknown author");
-      console.log(`[LSN EXTRACT] Fetching profiles for ${unknownAuthorPosts.length} unknown authors`);
+      logDebug(`EXTRACT] Fetching profiles for ${unknownAuthorPosts.length} unknown authors`);
 
       for (const post of unknownAuthorPosts) {
         // Use the miniProfileUrn we extracted earlier
         const decodedUrn = post.miniProfileUrn;
         if (decodedUrn) {
-          console.log(`[LSN EXTRACT] Fetching profile for:`, decodedUrn);
+          logDebug(`EXTRACT] Fetching profile for:`, decodedUrn);
 
           const profile = await fetchProfileByMiniProfileUrn(decodedUrn, csrfToken);
           if (profile?.name) {
-            console.log(`[LSN EXTRACT] Got profile name:`, profile.name);
+            logDebug(`EXTRACT] Got profile name:`, profile.name);
             post.authorName = profile.name;
           }
         } else {
-          console.log(`[LSN EXTRACT] No miniProfileUrn for post:`, post.postUrl?.substring(0, 60));
+          logDebug(`EXTRACT] No miniProfileUrn for post:`, post.postUrl?.substring(0, 60));
         }
       }
     }
@@ -3120,6 +3156,10 @@ function isSyncDebugEnabled() {
     });
     return response?.ok ? response.data : null;
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SYNC ORCHESTRATION
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   async function runApiSync({ mode = "incremental", restart = false } = {}) {
     const normalizedMode = mode === "full" ? "full" : "incremental";
@@ -3680,6 +3720,10 @@ function isSyncDebugEnabled() {
     const rect = host.getBoundingClientRect();
     return rect.width > 40 && rect.height > 40;
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // UI RENDERING & SIDEBAR
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   function buildSidebarRoot() {
     const root = document.createElement("section");
@@ -4385,6 +4429,10 @@ function injectDropdownTrigger() {
     return base;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SEARCH & RESULTS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
   async function performSearch(page = 1) {
     try {
       const queryText = el("lsn-q")?.value || "";
@@ -4460,6 +4508,10 @@ function injectDropdownTrigger() {
       }
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // INITIALIZATION
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   function bootstrapOnce() {
     if (window.__LSN_BOOTSTRAPPED__) {
