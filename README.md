@@ -1,82 +1,59 @@
-# LinkedIn Saved Navigator
+# <img src="assets/icons/icon.svg" width="48" height="48" valign="middle"> LinkedIn Saved Navigator
 
-A Chrome/Edge extension that lets you index and search LinkedIn saved posts directly on LinkedIn's saved-posts page.
+A powerful Chrome/Edge extension to index, search, and filter your LinkedIn saved posts with a modern, user-friendly interface. ✨
 
-## What it does
+## 🚀 Features
 
-- Injects a right sidebar on `linkedin.com/my-items/saved-posts`.
-- Runs guided sync for lazy-loaded saved posts (LinkedIn loads a small chunk, then more after scrolling).
-- Uses end-of-feed detection that waits for repeated no-growth cycles near bottom before marking sync complete.
-- Stores posts in local IndexedDB with dedupe by stable id.
-- Supports text search and metadata filters:
-  - author
-  - date range
-  - month
-  - day of week
-  - day of month
-  - content type
-- Opens original post URL from results.
-- Optional `Return all matches` mode to fetch all filtered results at once.
-- Includes a `Data Health` panel to verify indexed data quality (author/text/date coverage and sample rows).
+- **Quick Access Button**: Integrated directly into LinkedIn's "My items" sidebar menu 🖱️
+- **Smart Syncing**: 🔄
+  - **Sync**: Fetch all saved posts
+  - **Clear & Resync**: Start fresh with a complete re-index
+- **Rich Filters**: 🔍
+  - **Author**: Dropdown with all authors and their post counts
+  - **Content Type**: Post, Article, Video, Document, Image
+  - **Date Range**: Filter by from/to dates
+- **Local Storage**: All data stored securely in your browser's IndexedDB 🛡️
 
-## Install (Developer Mode)
+## 🛠️ Installation (Developer Mode)
 
-1. Open `chrome://extensions` (or `edge://extensions`).
-2. Enable `Developer mode`.
-3. Click `Load unpacked`.
-4. Select folder: `D:\Opensource_repos\linkedin-saved-navigator`.
+1. Clone or download this repository
+2. Open `chrome://extensions` (or `edge://extensions`)
+3. Enable **Developer mode** (top right)
+4. Click **Load unpacked**
+5. Select the project folder
 
-## How to use
+## 📖 How to Use
 
-1. Open LinkedIn saved posts page:
-   - `https://www.linkedin.com/my-items/saved-posts/`
-2. Use the `Saved Navigator` button on the right.
-3. Click `Start Sync`.
-4. Keep the tab open while sync runs. The extension will auto-scroll and index newly loaded cards.
-5. Use search and filters in the same sidebar.
-6. Click `Open` on any result to jump to the original LinkedIn post.
+1. Navigate to your [LinkedIn Saved Posts](https://www.linkedin.com/my-items/saved-posts/)
+2. Click **Saved Navigator** in the "My items" sidebar menu
+3. Click **Sync** to start indexing your posts
+4. Use the search bar and filters to find posts
+5. Click **Open Post** to view the original, or **Open Profile** to visit the author's profile
 
-## Notes on reliability
+## 🖥️ Interface
 
-- LinkedIn UI selectors can change; extractor uses fallback selectors.
-- Sync ends after repeated cycles with no new cards found.
-- Re-running sync is safe; records are upserted by id.
+### 🛠️ Toolbar
+- **Toggle (▲/▼)**: Collapse/expand the filters section
+- **Search**: Execute the search with current filters
+- **Clear**: Reset all filters
+- **Results Count**: Real-time feedback on matches
 
-## Run tests
+### 🔍 Filters
+- **Search Box**: Full-text search with autocomplete suggestions
+- **Author Dropdown**: Select from all indexed authors
+- **Content Type**: Filter by post type
+- **More Filters**: Date range (from/to)
 
+## 🧪 Testing
+
+### Unit Tests
 ```bash
 npm test
 ```
 
-## Browser E2E (real LinkedIn page)
+## 🤝 Contributing
 
-This project includes Playwright scripts that exercise the extension on the real saved-posts page.
+Contributions are welcome! Please feel free to submit pull requests.
 
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-2. Bootstrap authenticated profile (manual one-time login):
-
-```bash
-npm run test:e2e:bootstrap
-```
-
-3. Run real-page E2E:
-
-```bash
-npm run test:e2e:linkedin
-```
-
-Environment variables:
-- `LSN_E2E_PROFILE_DIR`: persistent browser profile directory.
-- `LSN_E2E_EXTENSION_DIR`: unpacked extension path (defaults to repo root).
-- `LSN_E2E_TARGET_URL`: defaults to `https://www.linkedin.com/my-items/saved-posts/`.
-- `LSN_E2E_TIMEOUT_MS`: E2E timeout in ms (default `120000`).
-- `LSN_E2E_EXPECT_MIN_INDEXED`: require minimum indexed posts during run (default `0`).
-
-Notes:
-- These E2E scripts use a real browser and real LinkedIn session.
-- If LinkedIn redirects to login during E2E, run bootstrap again and complete login.
+---
+*Built with ❤️ for better LinkedIn navigation.*
